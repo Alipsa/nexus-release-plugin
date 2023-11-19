@@ -5,8 +5,12 @@ import org.gradle.api.Project
 
 import java.time.Instant
 
+/**
+ * This contains basic REST operations towards a Sonatype Nexus server
+ * The REST documentation is here: https://oss.sonatype.org/nexus-staging-plugin/default/docs/rest.html
+ */
 class NexusClient {
-  // REST documentation is here: https://oss.sonatype.org/nexus-staging-plugin/default/docs/rest.html
+
   static final String APPLICATION_JSON = 'application/json'
   //static final String APPLICATION_XML = 'application/xml'
   static final String BODY = 'body'

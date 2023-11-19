@@ -1,10 +1,15 @@
 package se.alipsa.groovy
 
+import org.gradle.api.GradleException
 import org.gradle.api.Plugin
 import org.gradle.api.Project
+
 import static se.alipsa.groovy.NexusClient.*
 
-// See https://docs.gradle.org/current/userguide/custom_plugins.html
+/**
+ * This plugin is an alternative to the nexus publish plugin which for some of
+ * my more complex projects did not do what I wanted it to do.
+ */
 class NexusReleasePlugin implements Plugin<Project> {
 
   void apply(Project project) {
@@ -22,14 +27,21 @@ class NexusReleasePlugin implements Plugin<Project> {
             extension.userName.getOrNull(),
             extension.password.getOrNull()
         )
-        println "Hello from the NexusReleasePlugin, profileId = $profileId"
+        //println "Hello from the NexusReleasePlugin, profileId = $profileId"
+        if (profileId == null || profileId.isBlank()) {
+          throw new GradleException("Failed to find the staging profile id")
+        }
         String stagingRepoId = findStagingRepositoryId(
             profileId,
             extension.nexusUrl.getOrNull(),
             extension.userName.getOrNull(),
             extension.password.getOrNull()
         )
-        println "NexusReleasePlugin, stagingRepoId = $stagingRepoId"
+        // println "NexusReleasePlugin, stagingRepoId = $stagingRepoId"
+        if (stagingRepoId == null || stagingRepoId.isBlank()) {
+          throw new GradleException("Failed to find the staging repo id")
+        }
+
         Map<String, Object> closeResponse = closeStagingRepository(
             stagingRepoId,
             profileId,
@@ -38,7 +50,12 @@ class NexusReleasePlugin implements Plugin<Project> {
             extension.password.getOrNull(),
             project
         )
-        println "Close request result = ${closeResponse[RESPONSE_CODE]}, body = ${closeResponse[BODY]}"
+        if (closeResponse[RESPONSE_CODE] >= 300) {
+          println "Close request failed result = ${closeResponse[RESPONSE_CODE]}, body = ${closeResponse[BODY]}"
+          throw new GradleException("Failed to close the staging repo $stagingRepoId")
+        } else {
+          println "$stagingRepoId closed successfully"
+        }
 
         Map<String, Object> promoteResponse = promoteStagingRepository(
             stagingRepoId,
@@ -48,7 +65,13 @@ class NexusReleasePlugin implements Plugin<Project> {
             extension.password.getOrNull(),
             project
         )
-        println "Promote request result = ${promoteResponse[RESPONSE_CODE]}, body = ${promoteResponse[BODY]}"
+
+        if (promoteResponse[RESPONSE_CODE] >= 300) {
+          println "Promote request failed result = ${promoteResponse[RESPONSE_CODE]}, body = ${promoteResponse[BODY]}"
+          throw new GradleException("Failed to promote the staging repo $stagingRepoId")
+        } else {
+          println "$stagingRepoId promoted successfully"
+        }
 
         Map<String, Object> dropResponse = dropStagingRepository(
             stagingRepoId,
@@ -58,7 +81,13 @@ class NexusReleasePlugin implements Plugin<Project> {
             extension.password.getOrNull(),
             project
         )
-        println "Drop request result = ${dropResponse[RESPONSE_CODE]}, body = ${dropResponse[BODY]}"
+
+        if (dropResponse[RESPONSE_CODE] >= 300) {
+          println "Drop request failed, result = ${dropResponse[RESPONSE_CODE]}, body = ${dropResponse[BODY]}"
+          throw new GradleException("Failed to drop the staging repo $stagingRepoId after promotion")
+        } else {
+          println "$stagingRepoId dropped sucessfully"
+        }
       }
     }
   }
