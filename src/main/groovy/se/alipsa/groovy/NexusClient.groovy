@@ -12,7 +12,6 @@ import java.time.Instant
 class NexusClient {
 
   static final String APPLICATION_JSON = 'application/json'
-  //static final String APPLICATION_XML = 'application/xml'
   static final String BODY = 'body'
   static final String RESPONSE_CODE = 'responseCode'
   static final String HEADERS = 'headers'
@@ -73,13 +72,7 @@ class NexusClient {
                                                     String userName, String password, Project project) {
     // /service/local/staging/profiles/<profile-id>/finish
     String url = "${baseUrl(publishUrl)}/service/local/staging/profiles/$profileId/finish"
-    String payload = """<promoteRequest>
-      <data>
-          <stagedRepositoryId>${stagingRepoId}</stagedRepositoryId>
-          <description>${project.group}:${project.name} closed by nexus release plugin</description>
-      </data>
-    </promoteRequest>"""
-    payload = """{
+    String payload = """{
       "data":{
         "stagedRepositoryId":"${stagingRepoId}",
         "description":"${project.group}:${project.name} closed by nexus release plugin"
@@ -122,14 +115,14 @@ class NexusClient {
     conn.setRequestProperty("Accept", APPLICATION_JSON)
     conn.setRequestProperty("Authorization", basicAuth(username, password))
     conn.connect()
-    int responseCode = conn.getResponseCode();
-    var responseHeaders = conn.getHeaderFields();
-    BufferedReader br = new BufferedReader(new InputStreamReader(conn.getInputStream()));
-    String line;
+    int responseCode = conn.getResponseCode()
+    var responseHeaders = conn.getHeaderFields()
+    BufferedReader br = new BufferedReader(new InputStreamReader(conn.getInputStream()))
+    String line
     while ((line = br.readLine()) != null) {
-      writer.append(line).append('\n');
+      writer.append(line).append('\n')
     }
-    conn.disconnect();
+    conn.disconnect()
     return [(BODY): writer.toString(), (RESPONSE_CODE): responseCode, (HEADERS): responseHeaders]
   }
 
@@ -143,7 +136,7 @@ class NexusClient {
     conn.setRequestProperty("Authorization", basicAuth(username, password))
     conn.setDoOutput(true)
     conn.connect()
-    OutputStream os = conn.getOutputStream();
+    OutputStream os = conn.getOutputStream()
     os.write(payload.getBytes())
     os.flush()
     os.close()
@@ -152,7 +145,7 @@ class NexusClient {
     InputStream is = null
     try {
       is = conn.getInputStream()
-    } catch (IOException e) {
+    } catch (IOException ignored) {
       // no content
     }
     if (is != null) {
