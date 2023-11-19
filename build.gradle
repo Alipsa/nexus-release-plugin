@@ -1,6 +1,6 @@
 plugins {
   id 'groovy'
-  id 'java-library'
+  id 'java-gradle-plugin'
   id 'signing'
   id 'maven-publish'
   id "com.github.ben-manes.versions" version "0.49.0"
@@ -9,6 +9,15 @@ plugins {
 group = 'se.alipsa.groovy'
 version = '1.0.0-SNAPSHOT'
 description = 'Automates the release process in Nexus (e.g. Sonatype OSSRH) after upload (publish) has completed'
+
+gradlePlugin {
+  plugins {
+    simplePlugin {
+      id = project.name
+      implementationClass = 'se.alipsa.groovy.NexusReleasePlugin'
+    }
+  }
+}
 
 repositories {
   if (version.contains('SNAPSHOT')) {
