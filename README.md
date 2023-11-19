@@ -49,7 +49,7 @@ publishing {
         licenses {
           license {
             name = 'MIT License'
-            url = 'https://raw.githubusercontent.com/Alipsa/matrix/matrix-core/main/LICENSE'
+            url = 'https://raw.githubusercontent.com/yourGroup/yourProject/main/LICENSE'
           }
         }
         developers {
