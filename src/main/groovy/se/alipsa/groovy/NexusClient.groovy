@@ -60,7 +60,8 @@ class NexusClient {
         if (repo == null && stageRepo.type == 'open') {
           repo = stageRepo
         }
-        if (stageRepo.type == 'open' && Instant.parse(repo.created) > Instant.parse(stageRepo.created)) {
+        // For some reason, the shorthand instantA > instantB is not working properly in gradle
+        if (repo != null && stageRepo.type == 'open' && Instant.parse(repo.created).isAfter(Instant.parse(stageRepo.created))) {
           repo = stageRepo
         }
       }
