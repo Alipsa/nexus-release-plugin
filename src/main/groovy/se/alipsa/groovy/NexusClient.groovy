@@ -68,6 +68,15 @@ class NexusClient {
     return repo?.repositoryId
   }
 
+  static String getStagingRepositoryStatus(String stagingRepositoryId, String url, String userName, String password) {
+    //https://oss.sonatype.org/service/local/staging/profile_repositories
+    Map<String, Object> response = get("${baseUrl(url)}/service/local/staging/repository/$stagingRepositoryId", userName, password)
+    String body = response[BODY]
+    def stagingRepo = new JsonSlurper().parseText(body)
+
+    return stagingRepo?.type
+  }
+
   static Map<String, Object> closeStagingRepository(String stagingRepoId, String profileId, String publishUrl,
                                                     String userName, String password, Project project) {
     // /service/local/staging/profiles/<profile-id>/finish

@@ -57,6 +57,27 @@ class NexusReleasePlugin implements Plugin<Project> {
           println "$stagingRepoId closed successfully"
         }
 
+        String status = 'open'
+        int loopCount = 0
+        while(loopCount < 10) {
+          sleep(5000)
+          status = getStagingRepositoryStatus(
+              stagingRepoId,
+              extension.nexusUrl.getOrNull(),
+              extension.userName.getOrNull(),
+              extension.password.getOrNull()
+          )
+          if ('closed' == status) {
+            break
+          }
+          loopCount++
+          println("Waiting for close operation to finish, retry $loopCount, status is $status")
+        }
+        if ('closed' != status) {
+          println "Failed to close staging repository $stagingRepoId, status is $status"
+          throw new GradleException("Failed to close staging repository $stagingRepoId")
+        }
+
         Map<String, Object> promoteResponse = promoteStagingRepository(
             stagingRepoId,
             profileId,
