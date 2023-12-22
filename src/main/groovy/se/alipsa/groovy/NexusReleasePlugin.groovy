@@ -14,7 +14,8 @@ class NexusReleasePlugin implements Plugin<Project> {
 
   void apply(Project project) {
     def extension = project.extensions.create('nexusReleasePlugin', NexusReleasePluginExtension)
-    project.task('release') {
+    project.tasks.register('release') {
+      //project.task('release') {
       dependsOn(project.tasks.named('publishMavenPublicationToMavenRepository'))
       if (project.version.endsWith("-SNAPSHOT")) {
         println("NexusReleasePlugin: A snapshot cannot be released, publish is enough (or maybe you forgot to change the version?")
@@ -60,7 +61,7 @@ class NexusReleasePlugin implements Plugin<Project> {
         String status = 'open'
         int loopCount = 0
         while(loopCount < 10) {
-          sleep(5000)
+          sleep(10000)
           status = getStagingRepositoryStatus(
               stagingRepoId,
               extension.nexusUrl.getOrNull(),
