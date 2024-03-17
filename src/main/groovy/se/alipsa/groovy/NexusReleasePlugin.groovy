@@ -92,9 +92,19 @@ class NexusReleasePlugin implements Plugin<Project> {
           println "Promote request failed result = ${promoteResponse[RESPONSE_CODE]}, body = ${promoteResponse[BODY]}"
           throw new GradleException("Failed to promote the staging repo $stagingRepoId")
         } else {
-          println "$stagingRepoId promoted successfully"
+          println "$stagingRepoId promote request sent successfully"
         }
 
+        status = getStagingRepositoryStatus(
+            stagingRepoId,
+            extension.nexusUrl.getOrNull(),
+            extension.userName.getOrNull(),
+            extension.password.getOrNull()
+        )
+        println("Staging repository is now in status '$status'")
+
+        println("You need to drop it manually as doing it directly would be too soon")
+        /*
         Map<String, Object> dropResponse = dropStagingRepository(
             stagingRepoId,
             profileId,
@@ -110,6 +120,7 @@ class NexusReleasePlugin implements Plugin<Project> {
         } else {
           println "$stagingRepoId dropped sucessfully"
         }
+         */
       }
     }
   }
