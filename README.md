@@ -3,14 +3,15 @@ Automates the release process in Nexus (e.g. Sonatype OSSRH) after upload (publi
 
 The main differences compared to the [Nexus publish plugin](https://github.com/gradle-nexus/publish-plugin) are:
 1. It assumes you use the maven publish plugin to upload your artifacts
-2. Any subproject (module) can use it in contrast to the nexus publish plugin which must be applied on the root project only
+2. Any subproject (module) can use it in contrast to the nexus publish plugin which must be applied on the 
+   root project only allowing you to publish modules independently.
 
-To use it you need to add your sonatype username and password to
+To use it you need to add your sonatype username token and password token to
 ~/.gradle/gradle.properties, e.g:
 
 ```properties
-sonatypeUsername=myUSerName
-sonatypePassword=myPassw0rd
+sonatypeUsername=myUSerToken
+sonatypePassword=myPassw0rdToken
 ```
 
 Then you use the plugin in your build.gradle as follows:
