@@ -28,9 +28,11 @@ class NexusReleasePlugin implements Plugin<Project> {
             extension.userName.getOrNull(),
             extension.password.getOrNull()
         )
-        //println "Hello from the NexusReleasePlugin, profileId = $profileId"
+
         if (profileId == null || profileId.isBlank()) {
           throw new GradleException("Failed to find the staging profile id")
+        } else {
+          println "NexusReleasePlugin found a published project for $project with profileId = $profileId"
         }
         String stagingRepoId = findStagingRepositoryId(
             profileId,
@@ -43,6 +45,7 @@ class NexusReleasePlugin implements Plugin<Project> {
           throw new GradleException("Failed to find the staging repo id")
         }
 
+        println "Closing staging repo id $stagingRepoId for project $project"
         Map<String, Object> closeResponse = closeStagingRepository(
             stagingRepoId,
             profileId,
@@ -55,7 +58,8 @@ class NexusReleasePlugin implements Plugin<Project> {
           println "Close request failed result = ${closeResponse[RESPONSE_CODE]}, body = ${closeResponse[BODY]}"
           throw new GradleException("Failed to close the staging repo $stagingRepoId")
         } else {
-          println "$stagingRepoId closed successfully"
+          println "$stagingRepoId closing request sent successfully, waiting 10s to allow cloing to finish"
+          Thread.sleep(10000)
         }
 
         String status = 'open'
@@ -68,7 +72,9 @@ class NexusReleasePlugin implements Plugin<Project> {
               extension.userName.getOrNull(),
               extension.password.getOrNull()
           )
+          println "Status is $status"
           if ('closed' == status) {
+            println "Closing operation completed!"
             break
           }
           loopCount++
@@ -79,6 +85,7 @@ class NexusReleasePlugin implements Plugin<Project> {
           throw new GradleException("Failed to close staging repository $stagingRepoId")
         }
 
+        println "Promoting $stagingRepoId for project $project"
         Map<String, Object> promoteResponse = promoteStagingRepository(
             stagingRepoId,
             profileId,
@@ -92,9 +99,10 @@ class NexusReleasePlugin implements Plugin<Project> {
           println "Promote request failed result = ${promoteResponse[RESPONSE_CODE]}, body = ${promoteResponse[BODY]}"
           throw new GradleException("Failed to promote the staging repo $stagingRepoId")
         } else {
-          println "$stagingRepoId promote request sent successfully"
+          println "$stagingRepoId promote request sent successfully (${promoteResponse[RESPONSE_CODE]})"
         }
-
+        println "Waiting 10 seconds..."
+        Thread.sleep(10000)
         status = getStagingRepositoryStatus(
             stagingRepoId,
             extension.nexusUrl.getOrNull(),
@@ -103,24 +111,26 @@ class NexusReleasePlugin implements Plugin<Project> {
         )
         println("Staging repository is now in status '$status'")
 
-        println("You need to drop it manually as doing it directly would be too soon")
-        /*
-        Map<String, Object> dropResponse = dropStagingRepository(
-            stagingRepoId,
-            profileId,
-            extension.nexusUrl.getOrNull(),
-            extension.userName.getOrNull(),
-            extension.password.getOrNull(),
-            project
-        )
+        if (status == 'closed') {
+          println "Dropping repository $stagingRepoId"
+          Map<String, Object> dropResponse = dropStagingRepository(
+              stagingRepoId,
+              profileId,
+              extension.nexusUrl.getOrNull(),
+              extension.userName.getOrNull(),
+              extension.password.getOrNull(),
+              project
+          )
 
-        if (dropResponse[RESPONSE_CODE] >= 300) {
-          println "Drop request failed, result = ${dropResponse[RESPONSE_CODE]}, body = ${dropResponse[BODY]}"
-          throw new GradleException("Failed to drop the staging repo $stagingRepoId after promotion")
+          if (dropResponse[RESPONSE_CODE] >= 300) {
+            println "Drop request failed, result = ${dropResponse[RESPONSE_CODE]}, body = ${dropResponse[BODY]}"
+            throw new GradleException("Failed to drop the staging repo $stagingRepoId after promotion")
+          } else {
+            println "$stagingRepoId dropped sucessfully"
+          }
         } else {
-          println "$stagingRepoId dropped sucessfully"
+          println("You need to drop $stagingRepoId manually as doing it directly would be too soon")
         }
-         */
       }
     }
   }
