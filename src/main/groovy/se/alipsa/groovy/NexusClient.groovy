@@ -2,6 +2,7 @@ package se.alipsa.groovy
 
 import groovy.json.JsonSlurper
 import org.gradle.api.Project
+import org.gradle.api.logging.Logger
 
 import java.time.Instant
 
@@ -16,10 +17,16 @@ class NexusClient {
   static final String RESPONSE_CODE = 'responseCode'
   static final String HEADERS = 'headers'
 
-  static String findStagingProfileId(String groupName, String url, String userName, String password) {
+  org.gradle.api.logging.Logger log
+
+  NexusClient(Logger log) {
+    this.log = log
+  }
+
+  String findStagingProfileId(String groupName, String url, String userName, String password) {
     //println("Searching for a match for $groupName")
     if (url == null) {
-      println("nexusUrl is not set cannot continue")
+      log.error("nexusUrl is not set cannot continue")
       return null
     }
     Map<String, Object> response = get("${baseUrl(url)}/service/local/staging/profiles", userName, password)
@@ -38,16 +45,16 @@ class NexusClient {
       profile = profiles[0]
       if (profiles.size() > 1) {
         // Not sure what to do here, maybe fail and require configuration to be set
-        println "multiple profiles matching $groupName found, picking $profile.name"
+        log.warn "multiple profiles matching $groupName found, picking $profile.name"
       }
     }
     if (profile == null) {
-      System.err.println("Failed to find a matching profile")
+      log.error("Failed to find a matching profile")
     }
     return profile.id
   }
 
-  static String findStagingRepositoryId(String profileId, String url, String userName, String password) {
+  String findStagingRepositoryId(String profileId, String url, String userName, String password) {
     //https://oss.sonatype.org/service/local/staging/profile_repositories
     Map<String, Object> response = get("${baseUrl(url)}/service/local/staging/profile_repositories", userName, password)
     String body = response[BODY]
@@ -68,7 +75,7 @@ class NexusClient {
     return repo?.repositoryId
   }
 
-  static String getStagingRepositoryStatus(String stagingRepositoryId, String url, String userName, String password) {
+  String getStagingRepositoryStatus(String stagingRepositoryId, String url, String userName, String password) {
     //https://oss.sonatype.org/service/local/staging/profile_repositories
     Map<String, Object> response = get("${baseUrl(url)}/service/local/staging/repository/$stagingRepositoryId", userName, password)
     String body = response[BODY]
@@ -77,7 +84,7 @@ class NexusClient {
     return stagingRepo?.type
   }
 
-  static Map<String, Object> closeStagingRepository(String stagingRepoId, String profileId, String publishUrl,
+  Map<String, Object> closeStagingRepository(String stagingRepoId, String profileId, String publishUrl,
                                                     String userName, String password, Project project) {
     // /service/local/staging/profiles/<profile-id>/finish
     String url = "${baseUrl(publishUrl)}/service/local/staging/profiles/$profileId/finish"
@@ -90,7 +97,7 @@ class NexusClient {
     return post(url, payload, userName, password)
   }
 
-  static Map<String, Object> promoteStagingRepository(String stagingRepoId, String profileId, String publishUrl,
+  Map<String, Object> promoteStagingRepository(String stagingRepoId, String profileId, String publishUrl,
                                                       String userName, String password, Project project) {
     // /staging/bulk/promote
     String url = "${baseUrl(publishUrl)}/service/local/staging/profiles/$profileId/promote"
@@ -103,7 +110,7 @@ class NexusClient {
     return post(url, payload, userName, password)
   }
 
-  static Map<String, Object> dropStagingRepository(String stagingRepoId, String profileId, String publishUrl,
+  Map<String, Object> dropStagingRepository(String stagingRepoId, String profileId, String publishUrl,
                                                    String userName, String password, Project project) {
     // /staging/bulk/promote
     String url = "${baseUrl(publishUrl)}/service/local/staging/profiles/$profileId/drop"
@@ -116,7 +123,7 @@ class NexusClient {
     return post(url, payload, userName, password)
   }
 
-  static Map<String, Object> get(String urlString, String username, String password) {
+  Map<String, Object> get(String urlString, String username, String password) {
     StringBuilder writer = new StringBuilder()
     URL url = new URL(urlString)
     HttpURLConnection conn = (HttpURLConnection) url.openConnection()
@@ -135,7 +142,7 @@ class NexusClient {
     return [(BODY): writer.toString(), (RESPONSE_CODE): responseCode, (HEADERS): responseHeaders]
   }
 
-  static Map<String, Object> post(String urlString, String payload, String username, String password) {
+  Map<String, Object> post(String urlString, String payload, String username, String password) {
     StringBuilder writer = new StringBuilder()
     URL url = new URL(urlString)
     HttpURLConnection conn = (HttpURLConnection) url.openConnection()
