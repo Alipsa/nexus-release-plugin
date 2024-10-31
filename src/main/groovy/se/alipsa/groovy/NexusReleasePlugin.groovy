@@ -15,7 +15,7 @@ class NexusReleasePlugin implements Plugin<Project> {
   void apply(Project project) {
     def extension = project.extensions.create('nexusReleasePlugin', NexusReleasePluginExtension)
     project.tasks.register('release') {
-      //project.task('release') {
+      project.logger.info("Alipsa Nexus Release Plugin, releasing $project.group:$project.name:$project.version")
       dependsOn(project.tasks.named('publishMavenPublicationToMavenRepository'))
       def log = project.logger
       NexusClient nexusClient = new NexusClient(log)
@@ -47,7 +47,7 @@ class NexusReleasePlugin implements Plugin<Project> {
           throw new GradleException("Failed to find the staging repo id")
         }
 
-        log.info "Closing staging repo id $stagingRepoId for project $project"
+        log.lifecycle("Closing staging repo id $stagingRepoId for project $project")
         Map<String, Object> closeResponse = nexusClient.closeStagingRepository(
             stagingRepoId,
             profileId,
@@ -56,18 +56,19 @@ class NexusReleasePlugin implements Plugin<Project> {
             extension.password.getOrNull(),
             project
         )
-        if (closeResponse[RESPONSE_CODE] >= 300) {
-          log.error "Close request failed result = ${closeResponse[RESPONSE_CODE]}, body = ${closeResponse[BODY]}"
+        Number closeResponseCode = closeResponse[RESPONSE_CODE] as Number
+        if (closeResponseCode >= 300) {
+          log.error "Close request failed result = $closeResponseCode, body = ${closeResponse[BODY]}"
           throw new GradleException("Failed to close the staging repo $stagingRepoId")
         } else {
-          log.lifecycle "$stagingRepoId closing request sent successfully, waiting 10s to allow cloing to finish"
-          Thread.sleep(10000)
+          log.lifecycle "$stagingRepoId closing request sent successfully with response code $closeResponseCode, waiting 15s to allow closing to finish"
+          Thread.sleep(15000)
         }
 
         String status = 'open'
         int loopCount = 0
-        while(loopCount < 10) {
-          sleep(10000)
+        while(loopCount < 20) {
+          sleep(15000)
           status = nexusClient.getStagingRepositoryStatus(
               stagingRepoId,
               extension.nexusUrl.getOrNull(),
@@ -103,8 +104,8 @@ class NexusReleasePlugin implements Plugin<Project> {
         } else {
           log.lifecycle "$stagingRepoId promote request sent successfully (${promoteResponse[RESPONSE_CODE]})"
         }
-        log.lifecycle"Waiting 10 seconds..."
-        Thread.sleep(10000)
+        log.lifecycle"Waiting 20 seconds..."
+        Thread.sleep(20000)
         status = nexusClient.getStagingRepositoryStatus(
             stagingRepoId,
             extension.nexusUrl.getOrNull(),
