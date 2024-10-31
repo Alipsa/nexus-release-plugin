@@ -18,43 +18,36 @@ class NexusReleasePlugin implements Plugin<Project> {
       project.logger.info("Alipsa Nexus Release Plugin, releasing $project.group:$project.name:$project.version")
       dependsOn(project.tasks.named('publishMavenPublicationToMavenRepository'))
       def log = project.logger
-      NexusClient nexusClient = new NexusClient(log)
+      ReleaseClient releaseClient = new ReleaseClient(
+          log,
+          project,
+          extension.nexusUrl.getOrNull(),
+          extension.userName.getOrNull(),
+          extension.password.getOrNull(),
+      )
       if (project.version.endsWith("-SNAPSHOT")) {
         log.quiet("NexusReleasePlugin: A snapshot cannot be released, publish is enough (or maybe you forgot to change the version?")
         return
       }
       doLast {
-        String profileId = nexusClient.findStagingProfileId(
-            String.valueOf(project.group),
-            extension.nexusUrl.getOrNull(),
-            extension.userName.getOrNull(),
-            extension.password.getOrNull()
-        )
+
+        String profileId = releaseClient.findStagingProfileId()
 
         if (profileId == null || profileId.isBlank()) {
           throw new GradleException("Failed to find the staging profile id")
         } else {
           log.lifecycle "NexusReleasePlugin found a published project for $project with profileId = $profileId"
         }
-        String stagingRepoId = nexusClient.findStagingRepositoryId(
-            profileId,
-            extension.nexusUrl.getOrNull(),
-            extension.userName.getOrNull(),
-            extension.password.getOrNull()
-        )
+        String stagingRepoId = releaseClient.findStagingRepositoryId(profileId)
         // println "NexusReleasePlugin, stagingRepoId = $stagingRepoId"
         if (stagingRepoId == null || stagingRepoId.isBlank()) {
           throw new GradleException("Failed to find the staging repo id")
         }
 
         log.lifecycle("Closing staging repo id $stagingRepoId for project $project")
-        Map<String, Object> closeResponse = nexusClient.closeStagingRepository(
+        Map<String, Object> closeResponse = releaseClient.closeStagingRepository(
             stagingRepoId,
-            profileId,
-            extension.nexusUrl.getOrNull(),
-            extension.userName.getOrNull(),
-            extension.password.getOrNull(),
-            project
+            profileId
         )
         Number closeResponseCode = closeResponse[RESPONSE_CODE] as Number
         if (closeResponseCode >= 300) {
@@ -69,13 +62,8 @@ class NexusReleasePlugin implements Plugin<Project> {
         int loopCount = 0
         while(loopCount < 20) {
           sleep(15000)
-          status = nexusClient.getStagingRepositoryStatus(
-              stagingRepoId,
-              extension.nexusUrl.getOrNull(),
-              extension.userName.getOrNull(),
-              extension.password.getOrNull()
-          )
-          log.lifecycle"Status is $status"
+          status = releaseClient.getStagingRepositoryStatus(stagingRepoId)
+          //log.lifecycle"Status is $status"
           if ('closed' == status) {
             log.lifecycle "Closing operation completed!"
             break
@@ -87,15 +75,12 @@ class NexusReleasePlugin implements Plugin<Project> {
           log.error "Failed to close staging repository $stagingRepoId, status is $status"
           throw new GradleException("Failed to close staging repository $stagingRepoId")
         }
-
+        log.lifecycle("Waiting 15s before attempting to promote...")
+        Thread.sleep(15000)
         log.lifecycle "Promoting $stagingRepoId for project $project"
-        Map<String, Object> promoteResponse = nexusClient.promoteStagingRepository(
+        Map<String, Object> promoteResponse = releaseClient.promoteStagingRepository(
             stagingRepoId,
-            profileId,
-            extension.nexusUrl.getOrNull(),
-            extension.userName.getOrNull(),
-            extension.password.getOrNull(),
-            project
+            profileId
         )
 
         if (promoteResponse[RESPONSE_CODE] >= 300) {
@@ -104,25 +89,30 @@ class NexusReleasePlugin implements Plugin<Project> {
         } else {
           log.lifecycle "$stagingRepoId promote request sent successfully (${promoteResponse[RESPONSE_CODE]})"
         }
+
         log.lifecycle"Waiting 20 seconds..."
         Thread.sleep(20000)
-        status = nexusClient.getStagingRepositoryStatus(
-            stagingRepoId,
-            extension.nexusUrl.getOrNull(),
-            extension.userName.getOrNull(),
-            extension.password.getOrNull()
-        )
+        loopCount = 0
+        while(loopCount < 10) {
+
+          status = releaseClient.getStagingRepositoryStatus(stagingRepoId)
+          //log.lifecycle"Status is $status"
+          if ('closed' == status) {
+            log.lifecycle "Closing operation completed!"
+            break
+          }
+          loopCount++
+          sleep(15000)
+          log.lifecycle("Waiting for close operation to finish, retry $loopCount, status is $status")
+        }
+
         log.lifecycle("Staging repository is now in status '$status'")
 
         if (status == 'closed') {
           log.lifecycle "Dropping repository $stagingRepoId"
-          Map<String, Object> dropResponse = nexusClient.dropStagingRepository(
+          Map<String, Object> dropResponse = releaseClient.dropStagingRepository(
               stagingRepoId,
-              profileId,
-              extension.nexusUrl.getOrNull(),
-              extension.userName.getOrNull(),
-              extension.password.getOrNull(),
-              project
+              profileId
           )
 
           if (dropResponse[RESPONSE_CODE] >= 300) {
