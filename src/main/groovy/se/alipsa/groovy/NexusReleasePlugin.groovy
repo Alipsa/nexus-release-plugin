@@ -97,18 +97,18 @@ class NexusReleasePlugin implements Plugin<Project> {
 
           status = releaseClient.getStagingRepositoryStatus(stagingRepoId)
           //log.lifecycle"Status is $status"
-          if ('closed' == status) {
+          if ('released' == status) {
             log.lifecycle "Closing operation completed!"
             break
           }
           loopCount++
           sleep(15000)
-          log.lifecycle("Waiting for close operation to finish, retry $loopCount, status is $status")
+          log.lifecycle("Waiting for promote operation to finish, retry $loopCount, status is $status")
         }
 
         log.lifecycle("Staging repository is now in status '$status'")
 
-        if (status == 'closed') {
+        if (status == 'released') {
           log.lifecycle "Dropping repository $stagingRepoId"
           Map<String, Object> dropResponse = releaseClient.dropStagingRepository(
               stagingRepoId,
