@@ -3,12 +3,11 @@ plugins {
   id 'java-gradle-plugin'
   id 'signing'
   id 'maven-publish'
-  id('signing')
   id("com.gradle.plugin-publish") version "1.3.1"
   id "com.github.ben-manes.versions" version "0.51.0"
 }
 
-group = 'se.alipsa.groovy'
+group = 'se.alipsa'
 version = '1.0.0'
 description = 'Automates the release process in Nexus (e.g. Sonatype OSSRH) after upload (publish) has completed'
 
@@ -17,11 +16,11 @@ gradlePlugin {
   vcsUrl.set("https://github.com/Alipsa/nexus-release-plugin")
   plugins {
     simplePlugin {
-      id = project.name
+      id = "${project.group}.${project.name}"
       implementationClass = 'se.alipsa.groovy.NexusReleasePlugin'
       displayName = "Gradle Nexus Release Plugin"
-      description = $project.description
-      tags.set(listOf("nexus", "publish", "release", "ossrh", "sonatype", "plugin"))
+      description = project.description
+      tags.set(["nexus", "publish", "release", "ossrh", "sonatype"])
     }
   }
 }
