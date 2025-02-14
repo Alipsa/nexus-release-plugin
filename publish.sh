@@ -1,1 +1,1 @@
-./gradlew publishPlugins
+./gradlew clean build publishPlugins
