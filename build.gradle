@@ -8,7 +8,7 @@ plugins {
 }
 
 group = 'se.alipsa'
-version = '1.0.0'
+version = '1.0.1'
 description = 'Automates the release process in Nexus (e.g. Sonatype OSSRH) after upload (publish) has completed'
 
 gradlePlugin {
@@ -44,25 +44,25 @@ java {
   toolchain {
     languageVersion = JavaLanguageVersion.of(17)
   }
+  withJavadocJar()
+  withSourcesJar()
 }
 
-/*task javadocJar(type: Jar, dependsOn: groovydoc) {
+/*
+task javadocJar(type: Jar, dependsOn: groovydoc) {
   archiveClassifier.set 'javadoc'
   from groovydoc.destinationDir
-}*/
+}
 
 task sourcesJar(type: Jar, dependsOn: classes) {
   archiveClassifier.set 'sources'
   from sourceSets.main.allSource
-}
+}*/
 
 
 publishing {
   publications {
     pluginMaven(MavenPublication) {
-      //from components.java
-      //artifact(javadocJar)
-      artifact(sourcesJar)
       pom {
         name = 'Nexus Release Plugin'
         description = "${project.description}"
