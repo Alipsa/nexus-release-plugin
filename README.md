@@ -84,7 +84,7 @@ publishing {
 // Conditionally apply it if credentials are set allows 
 // project members who cannot publish to use the build script smoothly
 if (project.ext.properties.sonatypeUsername) {
-  apply plugin: NexusReleasePlugin
+  apply plugin: 'se.alipsa.nexus-release-plugin'
   nexusReleasePlugin.nexusUrl = nexusUrl
   nexusReleasePlugin.userName = sonatypeUsername
   nexusReleasePlugin.password = sonatypePassword
