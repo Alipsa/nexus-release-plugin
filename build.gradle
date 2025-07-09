@@ -8,8 +8,8 @@ plugins {
 }
 
 group = 'se.alipsa'
-version = '1.0.1'
-description = 'Automates the release process in Nexus (e.g. Sonatype OSSRH) after upload (publish) has completed'
+version = '2.0.0-SNAPSHOT'
+description = 'Automates the release process in Central Portal after signing has completed'
 
 gradlePlugin {
   website.set("https://github.com/Alipsa/nexus-release-plugin")
@@ -17,10 +17,10 @@ gradlePlugin {
   plugins {
     simplePlugin {
       id = "${project.group}.${project.name}"
-      implementationClass = 'se.alipsa.groovy.NexusReleasePlugin'
+      implementationClass = 'se.alipsa.gradle.plugin.release.NexusReleasePlugin'
       displayName = "Gradle Nexus Release Plugin"
       description = project.description
-      tags.set(["nexus", "publish", "release", "ossrh", "sonatype"])
+      tags.set(["publish", "release", "central", "portal", "sonatype"])
     }
   }
 }
@@ -33,10 +33,12 @@ repositories {
 }
 
 dependencies {
-  def groovyVersion = "4.0.26"
+  def groovyVersion = "4.0.27"
   compileOnly "org.apache.groovy:groovy:${groovyVersion}"
 
-  testImplementation 'org.junit.jupiter:junit-jupiter:5.12.0'
+  testImplementation gradleTestKit()
+  testImplementation 'org.junit.jupiter:junit-jupiter:5.13.0'
+  testImplementation 'org.junit.platform:junit-platform-launcher:1.13.0'
   testImplementation "org.apache.groovy:groovy:${groovyVersion}"
 }
 
@@ -85,6 +87,10 @@ if (project.properties['signing.keyId'] == null) {
   tasks.project.signSimplePluginPluginMarkerMavenPublication {
     enabled = false
   }
+}
+
+test {
+  useJUnitPlatform()
 }
 
 /*

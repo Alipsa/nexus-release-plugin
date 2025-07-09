@@ -1,4 +1,4 @@
-package se.alipsa.groovy
+package se.alipsa.gradle.plugin.release
 
 import groovy.json.JsonSlurper
 import org.gradle.api.Project
@@ -10,14 +10,9 @@ import java.time.Instant
  * This contains basic REST operations towards a Sonatype Nexus server
  * The REST documentation is here: https://oss.sonatype.org/nexus-staging-plugin/default/docs/rest.html
  */
-class NexusClient {
+class NexusClient extends WsClient {
 
-  static final String APPLICATION_JSON = 'application/json'
-  static final String BODY = 'body'
-  static final String RESPONSE_CODE = 'responseCode'
-  static final String HEADERS = 'headers'
-
-  org.gradle.api.logging.Logger log
+  Logger log
 
   NexusClient(Logger log) {
     this.log = log
@@ -94,7 +89,7 @@ class NexusClient {
         "description":"${project.group}:${project.name} closed by nexus release plugin"
       }
     }"""
-    return post(url, payload, userName, password)
+    return post(url, payload.bytes, userName, password)
   }
 
   Map<String, Object> promoteStagingRepository(String stagingRepoId, String profileId, String publishUrl,
@@ -107,7 +102,7 @@ class NexusClient {
         "description":"${project.group}:${project.name} promoted by nexus release plugin"
       }
     }"""
-    return post(url, payload, userName, password)
+    return post(url, payload.bytes, userName, password)
   }
 
   Map<String, Object> dropStagingRepository(String stagingRepoId, String profileId, String publishUrl,
@@ -120,64 +115,10 @@ class NexusClient {
         "description":"${project.group}:${project.name} dropped by nexus release plugin"
       }
     }"""
-    return post(url, payload, userName, password)
+    return post(url, payload.bytes, userName, password)
   }
 
-  Map<String, Object> get(String urlString, String username, String password) {
-    StringBuilder writer = new StringBuilder()
-    URL url = new URL(urlString)
-    HttpURLConnection conn = (HttpURLConnection) url.openConnection()
-    conn.setRequestMethod("GET")
-    conn.setRequestProperty("Accept", APPLICATION_JSON)
-    conn.setRequestProperty("Authorization", basicAuth(username, password))
-    conn.connect()
-    int responseCode = conn.getResponseCode()
-    var responseHeaders = conn.getHeaderFields()
-    BufferedReader br = new BufferedReader(new InputStreamReader(conn.getInputStream()))
-    String line
-    while ((line = br.readLine()) != null) {
-      writer.append(line).append('\n')
-    }
-    conn.disconnect()
-    return [(BODY): writer.toString(), (RESPONSE_CODE): responseCode, (HEADERS): responseHeaders]
-  }
-
-  Map<String, Object> post(String urlString, String payload, String username, String password) {
-    StringBuilder writer = new StringBuilder()
-    URL url = new URL(urlString)
-    HttpURLConnection conn = (HttpURLConnection) url.openConnection()
-    conn.setRequestMethod('POST')
-    conn.setRequestProperty('Content-Type', APPLICATION_JSON)
-    conn.setRequestProperty("Accept", APPLICATION_JSON)
-    conn.setRequestProperty("Authorization", basicAuth(username, password))
-    conn.setDoOutput(true)
-    conn.connect()
-    OutputStream os = conn.getOutputStream()
-    os.write(payload.getBytes())
-    os.flush()
-    os.close()
-    int responseCode = conn.getResponseCode()
-    var responseHeaders = conn.getHeaderFields()
-    InputStream is = null
-    try {
-      is = conn.getInputStream()
-    } catch (IOException ignored) {
-      // no content
-    }
-    if (is != null) {
-      BufferedReader br = new BufferedReader(new InputStreamReader(is))
-
-      String line
-      while ((line = br.readLine()) != null) {
-        writer.append(line).append('\n')
-      }
-      is.close()
-    }
-    conn.disconnect()
-    return [(BODY): writer.toString(), (RESPONSE_CODE): responseCode, (HEADERS): responseHeaders]
-  }
-
-  static String basicAuth(String username, String password) {
+  String auth(String username, String password) {
     return "Basic " + Base64.getEncoder().encodeToString((username + ":" + password).getBytes())
   }
 

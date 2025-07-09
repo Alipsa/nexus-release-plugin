@@ -1,0 +1,28 @@
+package se.alipsa.gradle.plugin.release
+
+import org.gradle.api.logging.Logger
+
+class CentralPortalClient extends WsClient {
+
+  private static final String CENTRAL_PORTAL_URL = 'https://central.sonatype.com/api/v1'
+  Logger log
+
+  CentralPortalClient(Logger log) {
+    this.log = log
+  }
+
+  Map<String, Object> get(String endpoint, String username, String password) throws IOException {
+    String urlString = "${CENTRAL_PORTAL_URL}/${endpoint}"
+    return super.get(urlString, username, password)
+  }
+
+  Map<String, Object> postMultipart(String endpoint, File payload, String username, String password) throws IOException {
+    String urlString = "${CENTRAL_PORTAL_URL}/${endpoint}"
+    log.lifecycle("Post multipart to $urlString")
+    return super.postMultipart(urlString, payload, username, password)
+  }
+
+  String auth(String username, String password) {
+    return "Bearer " + Base64.getEncoder().encodeToString((username + ":" + password).getBytes())
+  }
+}
