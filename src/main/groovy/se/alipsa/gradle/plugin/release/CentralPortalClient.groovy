@@ -22,6 +22,12 @@ class CentralPortalClient extends WsClient {
     return super.postMultipart(urlString, payload, username, password)
   }
 
+  Map<String, Object> post(String endpoint, byte[] payload, String username, String password, String contentTye = 'application/x-www-form-urlencoded') throws IOException {
+    String urlString = "${CENTRAL_PORTAL_URL}/${endpoint}"
+    log.lifecycle("Post to $urlString")
+    return super.post(urlString, payload, username, password)
+  }
+
   String auth(String username, String password) {
     return "Bearer " + Base64.getEncoder().encodeToString((username + ":" + password).getBytes())
   }
