@@ -97,7 +97,7 @@ abstract class WsClient {
     def responseCode = conn.responseCode
     def responseText = conn.inputStream.text
 
-    return [RESPONSE_CODE: responseCode, BODY: responseText, HEADERS: conn.headerFields]
+    return [(RESPONSE_CODE): responseCode, (BODY): responseText, (HEADERS): conn.headerFields]
   }
 
   abstract String auth(String username, String password)
