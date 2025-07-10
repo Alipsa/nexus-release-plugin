@@ -85,7 +85,7 @@ class NexusReleasePlugin implements Plugin<Project> {
         int retries = 10
         while (!['PUBLISHED', 'FAILED'].contains(status) && retries-- > 0) {
           project.logger.lifecycle("Deploy status is $status")
-          Thread.sleep(10000)
+          Thread.sleep(20000)
           status = releaseClient.getStatus(deploymentId)
         }
 
