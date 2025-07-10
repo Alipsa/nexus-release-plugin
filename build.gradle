@@ -81,36 +81,20 @@ publishing {
 }
 
 if (project.properties['signing.keyId'] == null) {
-  tasks.project.signPluginMavenPublication {
-    enabled = false
+  afterEvaluate {
+    tasks.project.signPluginMavenPublication {
+      enabled = false
+    }
+    tasks.project.signSimplePluginPluginMarkerMavenPublication {
+      enabled = false
+    }
   }
-  tasks.project.signSimplePluginPluginMarkerMavenPublication {
-    enabled = false
-  }
+
 }
 
 test {
   useJUnitPlatform()
 }
-
-/*
-tasks.register('signPluginMavenPublication') {
-  if (project.properties['signing.keyId'] != null) {
-    project.logger.lifecycle("Signing artifacts...")
-    signPluginMavenPublication publishing.publications.pluginMaven
-  } else {
-    project.logger.lifecycle("signing.keyId is not defined, skipping signPluginMavenPublication...")
-  }
-}
-
-tasks.register('signSimplePluginPluginMarkerMavenPublication') {
-  if (project.properties['signing.keyId'] != null) {
-    project.logger.lifecycle("Signing artifacts...")
-    signSimplePluginPluginMarkerMavenPublication publishing.publications.pluginMaven
-  } else {
-    project.logger.lifecycle("signing.keyId is not defined, signSimplePluginPluginMarkerMavenPublication...")
-  }
-}*/
 
 signing {
   if (project.properties['signing.keyId'] != null) {

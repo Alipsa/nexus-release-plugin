@@ -28,7 +28,7 @@ class ReleaseClient {
     this.mavenPublication = mavenPublication
   }
 
-  File createBundle() {
+  void createBundle(File zipFile) {
     String groupId = mavenPublication.groupId
     String artifactId = mavenPublication.artifactId
     String version = mavenPublication.version
@@ -38,12 +38,8 @@ class ReleaseClient {
     File publicationDir = project.layout.buildDirectory.dir("publications/${mavenPublication.name}").get().asFile
     if (!publicationDir.exists()) {
       project.logger.lifecycle("No publication directory found at $publicationDir")
-      return null
+      return
     }
-
-    File zipDir = project.layout.buildDirectory.dir("zips").get().asFile
-    zipDir.mkdirs()
-    File zipFile = new File(zipDir, "${artifactId}-${version}-bundle.zip")
 
     try (ZipOutputStream zipOut = new ZipOutputStream(new FileOutputStream(zipFile))) {
 
@@ -85,7 +81,6 @@ class ReleaseClient {
     }
 
     //project.logger.lifecycle("ZIP created at: ${zipFile}")
-    return zipFile
   }
 
   private void addFileToZip(File baseFile, String suffix, String mavenPathPrefix, ZipOutputStream zipOut) {

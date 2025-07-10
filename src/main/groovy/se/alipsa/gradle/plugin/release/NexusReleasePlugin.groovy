@@ -1,6 +1,5 @@
 package se.alipsa.gradle.plugin.release
 
-import groovy.transform.CompileStatic
 import org.gradle.api.GradleException
 import org.gradle.api.*
 import org.gradle.api.provider.Provider
@@ -17,6 +16,45 @@ class NexusReleasePlugin implements Plugin<Project> {
     def extension = project.extensions.create('nexusReleasePlugin', NexusReleasePluginExtension)
     project.pluginManager.apply('signing')
     project.pluginManager.apply('maven-publish')
+
+    TaskProvider<Task> bundleTask = project.tasks.register('bundle') { task ->
+      task.group = 'publishing'
+      task.description = 'Create a release bundle that can be used to publish to Maven Central'
+
+      task.doLast {
+        def pub = extension.mavenPublication instanceof Provider
+            ? extension.mavenPublication.orNull
+            : extension.mavenPublication
+
+        if (!(pub instanceof MavenPublication)) {
+          println("mavenPublication = $pub (${pub?.class})")
+          throw new GradleException("Invalid publication configured in nexusReleasePlugin.mavenPublication")
+        }
+
+        def log = project.logger
+        def releaseClient = new ReleaseClient(
+            log,
+            project,
+            extension.nexusUrl.orNull,
+            extension.userName.orNull,
+            extension.password.orNull,
+            pub as MavenPublication
+        )
+
+        File zipDir = project.layout.buildDirectory.dir("zips").get().asFile
+        if (!zipDir.exists()) {
+          zipDir.mkdirs()
+        }
+        File bundle = new File(zipDir, "${pub.artifactId}-${pub.version}-bundle.zip")
+        releaseClient.createBundle(bundle)
+        if (!bundle?.exists()) {
+          throw new GradleException("Failed to create release bundle for publication ${pub.name}")
+        }
+        log.lifecycle("Bundle created at ${bundle.absolutePath}")
+      }
+    }
+
+
 
     TaskProvider<Task> releaseTask = project.tasks.register('release') { task ->
       task.group = 'publishing'
@@ -48,7 +86,9 @@ class NexusReleasePlugin implements Plugin<Project> {
             pub as MavenPublication
         )
 
-        File bundle = releaseClient.createBundle()
+        File zipDir = project.layout.buildDirectory.dir("zips").get().asFile
+        File bundle = new File(zipDir, "${pub.artifactId}-${pub.version}-bundle.zip")
+        releaseClient.createBundle(bundle)
         if (!bundle?.exists()) {
           throw new GradleException("Failed to create release bundle for publication ${pub.name}")
         }
