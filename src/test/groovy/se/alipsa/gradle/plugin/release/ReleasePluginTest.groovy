@@ -68,27 +68,6 @@ class ReleasePluginTest {
         sign publishing.publications.maven
       }
       
-      def generateChecksum(File file, String algo) {
-          def digest = MessageDigest.getInstance(algo)
-          file.withInputStream { is -> digest.update(is.bytes) }
-          def hash = digest.digest().encodeHex().toString()
-          String extension = algo.toLowerCase().replace('-', '')
-          def checksumFile = new File(file.absolutePath + '.' + extension)
-          checksumFile.text = hash
-      }       
-
-      tasks.withType(Sign).configureEach { signTask ->
-          doLast {
-              signTask.signatureFiles.each { ascFile ->
-                  def originalFile = new File(ascFile.absolutePath - '.asc')
-                  if (originalFile.exists()) {
-                      ['MD5', 'SHA-1'].each { algo ->
-                          generateChecksum(originalFile, algo)
-                      }
-                  }
-              }
-          }
-      }
       nexusReleasePlugin {
         nexusUrl = nexusReleaseUrl
         userName = 'sonatypeUsername'

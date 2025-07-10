@@ -5,6 +5,8 @@ import org.gradle.api.provider.Provider
 import org.gradle.api.publish.maven.MavenPublication
 import org.gradle.api.tasks.TaskProvider
 
+import java.security.MessageDigest
+
 class NexusReleasePlugin implements Plugin<Project> {
 
   void apply(Project project) {
@@ -23,6 +25,20 @@ class NexusReleasePlugin implements Plugin<Project> {
 
         def releaseClient = createClient(project, extension, pub)
         zipFile.parentFile.mkdirs()
+
+        // Add md5 and sha1 checksums to all artifacts
+        project.logger.lifecycle("Adding checksums to artifacts...")
+        pub.artifacts.each { artifact ->
+          ['MD5', 'SHA-1'].each { algo ->
+            generateChecksum(artifact.file, algo, project)
+          }
+        }
+        File publicationDir = project.layout.buildDirectory.dir("publications/${pub.name}").get().asFile
+        File pomFile = new File(publicationDir, "pom-default.xml")
+        ['MD5', 'SHA-1'].each { algo ->
+          generateChecksum(pomFile, algo, project)
+        }
+
         releaseClient.createBundle(zipFile)
 
         if (!zipFile.exists()) {
@@ -109,5 +125,15 @@ class NexusReleasePlugin implements Plugin<Project> {
         extension.password.orNull,
         pub
     )
+  }
+
+  def generateChecksum(File file, String algo, Project project) {
+    def digest = MessageDigest.getInstance(algo)
+    file.withInputStream { is -> digest.update(is.bytes) }
+    def hash = digest.digest().encodeHex().toString()
+    String extension = algo.toLowerCase().replace('-', '')
+    def checksumFile = new File("${file.absolutePath}.${extension}")
+    checksumFile.text = hash
+    project.logger.debug("Generated ${algo} for ${file.name} → ${checksumFile.name}")
   }
 }
