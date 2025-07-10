@@ -15,7 +15,7 @@ class NexusReleasePlugin implements Plugin<Project> {
     TaskProvider<Task> bundleTask = project.tasks.register('bundle') { task ->
       task.group = 'publishing'
       task.description = 'Create a release bundle that can be used to publish to Maven Central'
-      dependsOn "signMavenPublication"
+      dependsOn "publishToMavenLocal"
 
       task.doLast {
         def pub = getPublication(extension)
