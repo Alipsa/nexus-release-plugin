@@ -83,13 +83,15 @@ class NexusReleasePlugin implements Plugin<Project> {
 
         String status = releaseClient.getStatus(deploymentId)
         int retries = 10
-        while (!['PUBLISHED', 'FAILED'].contains(status) && retries-- > 0) {
+        while (!['PUBLISHING', 'PUBLISHED', 'FAILED'].contains(status) && retries-- > 0) {
           project.logger.lifecycle("Deploy status is $status")
           Thread.sleep(20000)
           status = releaseClient.getStatus(deploymentId)
         }
-
-        if (status == 'PUBLISHED') {
+        if (status == 'PUBLISHING') {
+          project.logger.lifecycle("Project $project uploaded and validated successfully!")
+          project.logger.lifecycle("It is currently publishing, see https://central.sonatype.com/publishing/deployments for details")
+        } else if (status == 'PUBLISHED') {
           project.logger.lifecycle("Project $project published successfully!")
         } else {
           throw new GradleException("Failed to release $project with deploymentId $deploymentId")
