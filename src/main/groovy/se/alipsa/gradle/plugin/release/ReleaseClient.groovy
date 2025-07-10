@@ -105,13 +105,13 @@ class ReleaseClient {
    * --verbose \
    * --header 'Authorization: Bearer ZXhhbXBsZV91c2VybmFtZTpleGFtcGxlX3Bhc3N3b3Jk' \
    * --form bundle=@central-bundle.zip \
-   * https://central.sonatype.com/api/v1/publisher/upload
+   * https://central.sonatype.com/api/v1/publisher/upload?publishingType=AUTOMATIC
    *
    * @param file The file to upload.
    * @return The deployment ID or null if the upload failed.
    */
   String upload(File file) {
-    Map<String, Object> result = wsClient.postMultipart('publisher/upload', file, userName, password)
+    Map<String, Object> result = wsClient.postMultipart('publisher/upload?publishingType=AUTOMATIC', file, userName, password)
     project.logger.lifecycle("Upload result: $result")
     return result.get(wsClient.BODY)
   }
