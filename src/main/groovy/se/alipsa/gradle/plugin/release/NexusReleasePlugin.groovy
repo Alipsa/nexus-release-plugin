@@ -5,9 +5,11 @@ import org.gradle.api.provider.Provider
 import org.gradle.api.publish.maven.MavenPublication
 import org.gradle.api.tasks.TaskProvider
 
+import java.security.DigestOutputStream
 import java.security.MessageDigest
 
 class NexusReleasePlugin implements Plugin<Project> {
+  static final List<String> CHECKSUM_ALGOS = ['MD5', 'SHA-1']
 
   void apply(Project project) {
     def extension = project.extensions.create('nexusReleasePlugin', NexusReleasePluginExtension)
@@ -17,7 +19,15 @@ class NexusReleasePlugin implements Plugin<Project> {
     TaskProvider<Task> bundleTask = project.tasks.register('bundle') { task ->
       task.group = 'publishing'
       task.description = 'Create a release bundle that can be used to publish to Maven Central'
-      dependsOn "publishToMavenLocal"
+      //dependsOn "publishToMavenLocal"
+      def pubName = extension.mavenPublication instanceof Provider
+          ? extension.mavenPublication.orNull?.name
+          : extension.mavenPublication?.name ?: 'maven'
+
+      if (pubName) {
+        task.dependsOn "generatePomFileFor${pubName.capitalize()}Publication"
+        task.dependsOn "sign${pubName.capitalize()}Publication"
+      }
 
       task.doLast {
         def pub = getPublication(extension)
@@ -29,13 +39,16 @@ class NexusReleasePlugin implements Plugin<Project> {
         // Add md5 and sha1 checksums to all artifacts
         project.logger.lifecycle("Adding checksums to artifacts...")
         pub.artifacts.each { artifact ->
-          ['MD5', 'SHA-1'].each { algo ->
+          CHECKSUM_ALGOS.each { algo ->
             generateChecksum(artifact.file, algo, project)
           }
         }
         File publicationDir = project.layout.buildDirectory.dir("publications/${pub.name}").get().asFile
         File pomFile = new File(publicationDir, "pom-default.xml")
-        ['MD5', 'SHA-1'].each { algo ->
+        if (!pomFile.exists()) {
+          throw new GradleException("Expected POM file at ${pomFile.absolutePath} but it was not found. Has 'publishToMavenLocal' completed successfully?")
+        }
+        CHECKSUM_ALGOS.each { algo ->
           generateChecksum(pomFile, algo, project)
         }
 
@@ -79,7 +92,8 @@ class NexusReleasePlugin implements Plugin<Project> {
         project.logger.lifecycle("Project $project published with deploymentId = $deploymentId")
 
         String status = releaseClient.getStatus(deploymentId)
-        while (!['PUBLISHED', 'FAILED'].contains(status)) {
+        int retries = 10
+        while (!['PUBLISHED', 'FAILED'].contains(status) && retries-- > 0) {
           project.logger.lifecycle("Deploy status is $status")
           Thread.sleep(10000)
           status = releaseClient.getStatus(deploymentId)
@@ -93,12 +107,16 @@ class NexusReleasePlugin implements Plugin<Project> {
       }
     }
 
+    /*
     project.gradle.taskGraph.whenReady { graph ->
       def signTask = project.tasks.findByName('signMavenPublication')
-      if (signTask && graph.hasTask(releaseTask.get())) {
-        releaseTask.configure { it.dependsOn(signTask) }
+      if (signTask && graph.hasTask(bundleTask.get())) {
+        bundleTask.configure { it.dependsOn(signTask) }
       }
-    }
+    }*/
+    // ✅ Expose tasks via the extension for external access
+    extension.bundleTask = bundleTask
+    extension.releaseTask = releaseTask
   }
 
   private static MavenPublication getPublication(NexusReleasePluginExtension extension) {
@@ -128,11 +146,20 @@ class NexusReleasePlugin implements Plugin<Project> {
   }
 
   def generateChecksum(File file, String algo, Project project) {
-    def digest = MessageDigest.getInstance(algo)
-    file.withInputStream { is -> digest.update(is.bytes) }
-    def hash = digest.digest().encodeHex().toString()
     String extension = algo.toLowerCase().replace('-', '')
     def checksumFile = new File("${file.absolutePath}.${extension}")
+    if (checksumFile.exists()) {
+      project.logger.debug("${checksumFile.name} already exists")
+      return
+    }
+    def digest = MessageDigest.getInstance(algo)
+    //file.withInputStream { is -> digest.update(is.bytes) }
+    // Less memory consuming:
+    file.withInputStream { is ->
+      new DigestOutputStream(OutputStream.nullOutputStream(), digest)
+          .withCloseable { dos -> is.transferTo(dos) }
+    }
+    def hash = digest.digest().encodeHex().toString()
     checksumFile.text = hash
     project.logger.debug("Generated ${algo} for ${file.name} → ${checksumFile.name}")
   }

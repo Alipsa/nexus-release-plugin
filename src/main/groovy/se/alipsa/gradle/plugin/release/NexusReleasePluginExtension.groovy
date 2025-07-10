@@ -1,9 +1,11 @@
 package se.alipsa.gradle.plugin.release
 
 import groovy.transform.CompileStatic
+import org.gradle.api.Task
 import org.gradle.api.model.ObjectFactory
 import org.gradle.api.provider.Property
 import org.gradle.api.publish.maven.MavenPublication
+import org.gradle.api.tasks.TaskProvider
 
 import javax.inject.Inject
 
@@ -14,6 +16,9 @@ class NexusReleasePluginExtension {
   final Property<String> userName
   final Property<String> password
   final Property<MavenPublication> mavenPublication
+  // ✅ Optional references to tasks
+  TaskProvider<Task> bundleTask
+  TaskProvider<Task> releaseTask
 
   @Inject
   NexusReleasePluginExtension(ObjectFactory objects) {
