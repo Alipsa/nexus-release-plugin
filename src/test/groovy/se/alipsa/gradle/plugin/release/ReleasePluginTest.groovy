@@ -1,10 +1,17 @@
 package se.alipsa.gradle.plugin.release
 
 import groovy.ant.AntBuilder
+import org.gradle.internal.impldep.org.bouncycastle.bcpg.*
+import org.gradle.internal.impldep.org.bouncycastle.jce.provider.BouncyCastleProvider
+import org.gradle.internal.impldep.org.bouncycastle.openpgp.*
+import org.gradle.internal.impldep.org.bouncycastle.openpgp.operator.*
+import org.gradle.internal.impldep.org.bouncycastle.openpgp.operator.jcajce.*
 import org.gradle.testkit.runner.GradleRunner
 import org.gradle.testkit.runner.BuildResult
 import org.gradle.testkit.runner.TaskOutcome
 import org.junit.jupiter.api.Test
+
+import java.security.*
 import java.util.zip.ZipFile
 
 import static org.junit.jupiter.api.Assertions.*
@@ -18,10 +25,11 @@ class ReleasePluginTest {
     println("Creating project in $testProjectDir")
     testProjectDir.mkdirs()
     // Write build.gradle
-    def testKey = new File('test-key.asc').text
+    def testKey = generateTestPrivateKey()
     File buildFile = new File(testProjectDir, "build.gradle")
     try (PrintWriter writer = new PrintWriter(new FileWriter(buildFile))) {
       writer.println("""\
+      import java.security.MessageDigest
       plugins {
         id 'groovy'
         id 'maven-publish'
@@ -30,7 +38,7 @@ class ReleasePluginTest {
       }
       group = 'com.example'
       version = '1.0.0'
-      ext.nexusUrl = 'https://central.sonatype.com/api/v1/publisher/upload'
+      ext.nexusReleaseUrl = 'https://central.sonatype.com/api/v1/publisher/upload'
       repositories { mavenCentral() }
       dependencies { implementation localGroovy() }
 
@@ -59,10 +67,34 @@ class ReleasePluginTest {
         useInMemoryPgpKeys(null, '''$testKey''', '')
         sign publishing.publications.maven
       }
-      nexusReleasePlugin.nexusUrl = nexusUrl
-      nexusReleasePlugin.userName = 'sonatypeUsername'
-      nexusReleasePlugin.password = 'sonatypePassword'
-      nexusReleasePlugin.mavenPublication = publishing.publications.maven
+      
+      def generateChecksum(File file, String algo) {
+          def digest = MessageDigest.getInstance(algo)
+          file.withInputStream { is -> digest.update(is.bytes) }
+          def hash = digest.digest().encodeHex().toString()
+          String extension = algo.toLowerCase().replace('-', '')
+          def checksumFile = new File(file.absolutePath + '.' + extension)
+          checksumFile.text = hash
+      }       
+
+      tasks.withType(Sign).configureEach { signTask ->
+          doLast {
+              signTask.signatureFiles.each { ascFile ->
+                  def originalFile = new File(ascFile.absolutePath - '.asc')
+                  if (originalFile.exists()) {
+                      ['MD5', 'SHA-1'].each { algo ->
+                          generateChecksum(originalFile, algo)
+                      }
+                  }
+              }
+          }
+      }
+      nexusReleasePlugin {
+        nexusUrl = nexusReleaseUrl
+        userName = 'sonatypeUsername'
+        password = 'sonatypePassword'
+        mavenPublication = publishing.publications.maven
+      }
       """.stripIndent())
     }
     File srcDir = new File(testProjectDir,"src/main/groovy")
@@ -76,12 +108,12 @@ class ReleasePluginTest {
     // Run build
     BuildResult result = GradleRunner.create()
         .withProjectDir(testProjectDir)
-        .withArguments("release")
+        .withArguments("bundle")
         .withPluginClasspath()
         .forwardOutput()
         .build()
 
-    assertEquals(TaskOutcome.SUCCESS, result.task(":release").getOutcome())
+    assertEquals(TaskOutcome.SUCCESS, result.task(":bundle").getOutcome())
 
     File zipFile = new File(testProjectDir,"build/zips/test-project-1.0.0-bundle.zip")
     assertTrue(zipFile.exists(), "ZIP file should be created")
@@ -97,12 +129,20 @@ class ReleasePluginTest {
     List<String> expectedEntries = [
         artifactPath + '.jar',
         artifactPath + '.jar.asc',
+        artifactPath + '.jar.md5',
+        artifactPath + '.jar.sha1',
         artifactPath + '-sources.jar',
         artifactPath + '-sources.jar.asc',
+        artifactPath + '-sources.jar.md5',
+        artifactPath + '-sources.jar.sha1',
         artifactPath + '-javadoc.jar',
         artifactPath + '-javadoc.jar.asc',
+        artifactPath + '-javadoc.jar.md5',
+        artifactPath + '-javadoc.jar.sha1',
         artifactPath + '.pom',
-        artifactPath +'.pom.asc'
+        artifactPath +'.pom.asc',
+        artifactPath +'.pom.md5',
+        artifactPath +'.pom.sha1'
     ]
 
     // Read actual ZIP entries
@@ -117,5 +157,34 @@ class ReleasePluginTest {
 
     AntBuilder ant = new AntBuilder()
     ant.delete dir: tempDir
+  }
+
+  String generateTestPrivateKey(String identity = "test@example.com", char[] passphrase = []) {
+    Security.addProvider(new BouncyCastleProvider())
+    KeyPairGenerator kpg = KeyPairGenerator.getInstance("RSA", "BC")
+    kpg.initialize(2048)
+    KeyPair keyPair = kpg.generateKeyPair()
+
+    PGPKeyPair pgpKeyPair = new JcaPGPKeyPair(PGPPublicKey.RSA_GENERAL, keyPair, new Date())
+    PGPDigestCalculator sha1Calc = new JcaPGPDigestCalculatorProviderBuilder().build().get(HashAlgorithmTags.SHA1)
+    PBESecretKeyEncryptor encryptor = new JcePBESecretKeyEncryptorBuilder(PGPEncryptedData.AES_256, sha1Calc)
+        .setProvider("BC").build(passphrase)
+    PGPSecretKey secretKey = new PGPSecretKey(
+        PGPSignature.DEFAULT_CERTIFICATION,
+        pgpKeyPair,
+        identity,
+        sha1Calc,
+        null,
+        null,
+        new JcaPGPContentSignerBuilder(pgpKeyPair.publicKey.algorithm, HashAlgorithmTags.SHA256),
+        encryptor
+    )
+
+    // Export as ASCII-armored string
+    ByteArrayOutputStream out = new ByteArrayOutputStream()
+    ArmoredOutputStream armoredOut = new ArmoredOutputStream(out)
+    secretKey.encode(armoredOut)
+    armoredOut.close()
+    return out.toString("UTF-8")
   }
 }

@@ -28,7 +28,7 @@ class ReleaseClient {
     this.mavenPublication = mavenPublication
   }
 
-  void createBundle(File zipFile) {
+  void createBundle(File zipFile) throws IOException {
     String groupId = mavenPublication.groupId
     String artifactId = mavenPublication.artifactId
     String version = mavenPublication.version
@@ -52,7 +52,7 @@ class ReleaseClient {
         }
 
         String name = file.name
-        if (!name.matches(/.*\.(jar|pom)(\.asc|\.md5|\.sha1)?$/)) return
+        if (!name.matches(/.*\.(jar)(\.asc|\.md5|\.sha1)?$/)) return
 
         String zipEntryName = mavenPathPrefix + name
         project.logger.debug("Adding file: $zipEntryName")
@@ -74,27 +74,29 @@ class ReleaseClient {
         zipOut.putNextEntry(new ZipEntry(pomEntryName))
         zipOut << pomFile.bytes
         zipOut.closeEntry()
-        addFileToZip(pomFile, ".asc", mavenPathPrefix, zipOut)
-        addFileToZip(pomFile, ".md5", mavenPathPrefix, zipOut)
-        addFileToZip(pomFile, ".sha1", mavenPathPrefix, zipOut)
+        addFileToZip(new File(publicationDir, "pom-default.xml.asc"), pomEntryName + ".asc", zipOut)
+        addFileToZip(new File(publicationDir, "pom-default.xml.md5"), pomEntryName + ".md5", zipOut)
+        addFileToZip(new File(publicationDir, "pom-default.xml.sha1"), pomEntryName + ".sha1", zipOut)
       }
     }
 
     //project.logger.lifecycle("ZIP created at: ${zipFile}")
   }
 
-  private void addFileToZip(File baseFile, String suffix, String mavenPathPrefix, ZipOutputStream zipOut) {
-    String baseName = baseFile.name
-    File file = new File(baseFile.absolutePath + ".asc")
-    if (file.exists()) {
-      String entryName = mavenPathPrefix + baseName + suffix
-      project.logger.debug("Adding: $entryName")
-      zipOut.putNextEntry(new ZipEntry(entryName))
-      zipOut << file.bytes
+  private void addFileToZip(File sourceFile, String targetPath, ZipOutputStream zipOut) throws IOException {
+    if (sourceFile.exists()) {
+      project.logger.debug("Adding: $targetPath")
+      zipOut.putNextEntry(new ZipEntry(targetPath))
+      zipOut << sourceFile.bytes
       zipOut.closeEntry()
     } else {
-      project.logger.warn("Missing $suffix file for: $baseName")
+      project.logger.warn("Cannot add file: $sourceFile to zip, it does not exist")
     }
+  }
+  private void addFileToZip(File baseFile, String suffix, String mavenPathPrefix, ZipOutputStream zipOut) {
+    File sourceFile = new File(baseFile.absolutePath + suffix)
+    String targetPath = mavenPathPrefix + baseFile.name + suffix
+    addFileToZip(sourceFile, targetPath, zipOut)
   }
 
   /**

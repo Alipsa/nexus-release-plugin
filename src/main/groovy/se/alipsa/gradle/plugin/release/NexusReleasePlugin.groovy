@@ -1,15 +1,10 @@
 package se.alipsa.gradle.plugin.release
 
-import org.gradle.api.GradleException
 import org.gradle.api.*
 import org.gradle.api.provider.Provider
 import org.gradle.api.publish.maven.MavenPublication
 import org.gradle.api.tasks.TaskProvider
 
-/**
- * This plugin is an alternative to the nexus publish plugin which for some of
- * my more complex projects did not do what I wanted it to do.
- */
 class NexusReleasePlugin implements Plugin<Project> {
 
   void apply(Project project) {
@@ -20,47 +15,31 @@ class NexusReleasePlugin implements Plugin<Project> {
     TaskProvider<Task> bundleTask = project.tasks.register('bundle') { task ->
       task.group = 'publishing'
       task.description = 'Create a release bundle that can be used to publish to Maven Central'
+      dependsOn "signMavenPublication"
 
       task.doLast {
-        def pub = extension.mavenPublication instanceof Provider
-            ? extension.mavenPublication.orNull
-            : extension.mavenPublication
+        def pub = getPublication(extension)
+        def zipFile = getBundleFile(project, pub)
 
-        if (!(pub instanceof MavenPublication)) {
-          println("mavenPublication = $pub (${pub?.class})")
-          throw new GradleException("Invalid publication configured in nexusReleasePlugin.mavenPublication")
-        }
+        def releaseClient = createClient(project, extension, pub)
+        zipFile.parentFile.mkdirs()
+        releaseClient.createBundle(zipFile)
 
-        def log = project.logger
-        def releaseClient = new ReleaseClient(
-            log,
-            project,
-            extension.nexusUrl.orNull,
-            extension.userName.orNull,
-            extension.password.orNull,
-            pub as MavenPublication
-        )
-
-        File zipDir = project.layout.buildDirectory.dir("zips").get().asFile
-        if (!zipDir.exists()) {
-          zipDir.mkdirs()
-        }
-        File bundle = new File(zipDir, "${pub.artifactId}-${pub.version}-bundle.zip")
-        releaseClient.createBundle(bundle)
-        if (!bundle?.exists()) {
+        if (!zipFile.exists()) {
           throw new GradleException("Failed to create release bundle for publication ${pub.name}")
         }
-        log.lifecycle("Bundle created at ${bundle.absolutePath}")
+
+        project.logger.lifecycle("Bundle created at ${zipFile.absolutePath}")
       }
     }
-
-
 
     TaskProvider<Task> releaseTask = project.tasks.register('release') { task ->
       task.group = 'publishing'
       task.description = 'Create and upload a release bundle to Nexus'
 
-      // defer execution to task action phase
+      // Make release depend on the bundle task
+      task.dependsOn(bundleTask)
+
       task.doLast {
         String version = project.version.toString()
         if (version.endsWith("-SNAPSHOT")) {
@@ -68,60 +47,67 @@ class NexusReleasePlugin implements Plugin<Project> {
           return
         }
 
-        def pub = extension.mavenPublication instanceof Provider
-            ? extension.mavenPublication.orNull
-            : extension.mavenPublication
-
-        if (!(pub instanceof MavenPublication)) {
-          throw new GradleException("Invalid publication configured in nexusReleasePlugin.mavenPublication")
+        def pub = getPublication(extension)
+        def zipFile = getBundleFile(project, pub) // reuse same logic as bundle task
+        if (!zipFile.exists()) {
+          throw new GradleException("Expected bundle at ${zipFile.absolutePath} but it was not found.")
         }
 
-        def log = project.logger
-        def releaseClient = new ReleaseClient(
-            log,
-            project,
-            extension.nexusUrl.orNull,
-            extension.userName.orNull,
-            extension.password.orNull,
-            pub as MavenPublication
-        )
+        def releaseClient = createClient(project, extension, pub)
 
-        File zipDir = project.layout.buildDirectory.dir("zips").get().asFile
-        File bundle = new File(zipDir, "${pub.artifactId}-${pub.version}-bundle.zip")
-        releaseClient.createBundle(bundle)
-        if (!bundle?.exists()) {
-          throw new GradleException("Failed to create release bundle for publication ${pub.name}")
-        }
-        log.lifecycle("Bundle created at ${bundle.absolutePath}")
-
-        String deploymentId = releaseClient.upload(bundle)
+        String deploymentId = releaseClient.upload(zipFile)
         if (!deploymentId) {
           throw new GradleException("Failed to find the staging profile id")
         }
 
-        log.lifecycle("Project $project published with deploymentId = $deploymentId")
+        project.logger.lifecycle("Project $project published with deploymentId = $deploymentId")
 
         String status = releaseClient.getStatus(deploymentId)
         while (!['PUBLISHED', 'FAILED'].contains(status)) {
-          log.lifecycle("Deploy status is $status")
+          project.logger.lifecycle("Deploy status is $status")
           Thread.sleep(10000)
           status = releaseClient.getStatus(deploymentId)
         }
 
         if (status == 'PUBLISHED') {
-          log.lifecycle("Project $project published successfully!")
+          project.logger.lifecycle("Project $project published successfully!")
         } else {
           throw new GradleException("Failed to release $project with deploymentId $deploymentId")
         }
       }
     }
 
-    // Wire in signing task as dependency if it exists — after all tasks are known
     project.gradle.taskGraph.whenReady { graph ->
       def signTask = project.tasks.findByName('signMavenPublication')
       if (signTask && graph.hasTask(releaseTask.get())) {
         releaseTask.configure { it.dependsOn(signTask) }
       }
     }
+  }
+
+  private static MavenPublication getPublication(NexusReleasePluginExtension extension) {
+    def pub = extension.mavenPublication instanceof Provider
+        ? extension.mavenPublication.orNull
+        : extension.mavenPublication
+    if (!(pub instanceof MavenPublication)) {
+      throw new GradleException("Invalid publication configured in nexusReleasePlugin.mavenPublication")
+    }
+    return pub
+  }
+
+  private static File getBundleFile(Project project, MavenPublication pub) {
+    File zipDir = project.layout.buildDirectory.dir("zips").get().asFile
+    return new File(zipDir, "${pub.artifactId}-${pub.version}-bundle.zip")
+  }
+
+  private static ReleaseClient createClient(Project project, NexusReleasePluginExtension extension, MavenPublication pub) {
+    return new ReleaseClient(
+        project.logger,
+        project,
+        extension.nexusUrl.orNull,
+        extension.userName.orNull,
+        extension.password.orNull,
+        pub
+    )
   }
 }
