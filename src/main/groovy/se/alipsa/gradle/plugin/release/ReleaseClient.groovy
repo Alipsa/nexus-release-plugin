@@ -40,7 +40,7 @@ class ReleaseClient {
       project.logger.lifecycle("No publication directory found at $publicationDir")
       return
     }
-
+    boolean missingFilesDetected = false
     try (ZipOutputStream zipOut = new ZipOutputStream(new FileOutputStream(zipFile))) {
 
       // 1. Add all publication artifacts (e.g. JARs and their signatures)
@@ -60,9 +60,9 @@ class ReleaseClient {
         zipOut << file.bytes
         zipOut.closeEntry()
 
-        addFileToZip(file, ".asc", mavenPathPrefix, zipOut)
-        addFileToZip(file, ".md5", mavenPathPrefix, zipOut)
-        addFileToZip(file, ".sha1", mavenPathPrefix, zipOut)
+        missingFilesDetected = missingFilesDetected || addFileToZip(file, ".asc", mavenPathPrefix, zipOut)
+        missingFilesDetected = missingFilesDetected || addFileToZip(file, ".md5", mavenPathPrefix, zipOut)
+        missingFilesDetected = missingFilesDetected || addFileToZip(file, ".sha1", mavenPathPrefix, zipOut)
       }
 
       // 2. Add the POM manually (it may not be in artifacts)
@@ -74,26 +74,32 @@ class ReleaseClient {
         zipOut.putNextEntry(new ZipEntry(pomEntryName))
         zipOut << pomFile.bytes
         zipOut.closeEntry()
-        addFileToZip(new File(publicationDir, "pom-default.xml.asc"), pomEntryName + ".asc", zipOut)
-        addFileToZip(new File(publicationDir, "pom-default.xml.md5"), pomEntryName + ".md5", zipOut)
-        addFileToZip(new File(publicationDir, "pom-default.xml.sha1"), pomEntryName + ".sha1", zipOut)
+        missingFilesDetected = missingFilesDetected || addFileToZip(new File(publicationDir, "pom-default.xml.asc"), pomEntryName + ".asc", zipOut)
+        missingFilesDetected = missingFilesDetected || addFileToZip(new File(publicationDir, "pom-default.xml.md5"), pomEntryName + ".md5", zipOut)
+        missingFilesDetected = missingFilesDetected || addFileToZip(new File(publicationDir, "pom-default.xml.sha1"), pomEntryName + ".sha1", zipOut)
+      } else {
+        missingFilesDetected = true
       }
     }
-
-    //project.logger.lifecycle("ZIP created at: ${zipFile}")
+    project.logger.lifecycle("Bundle created at $zipFile")
+    if (missingFilesDetected) {
+      project.logger.warn("Bundle is not complete, some files were missing, this bundle is probably not publishable!")
+    }
   }
 
-  private void addFileToZip(File sourceFile, String targetPath, ZipOutputStream zipOut) throws IOException {
+  private boolean addFileToZip(File sourceFile, String targetPath, ZipOutputStream zipOut) throws IOException {
     if (sourceFile.exists()) {
       project.logger.debug("Adding: $targetPath")
       zipOut.putNextEntry(new ZipEntry(targetPath))
       zipOut << sourceFile.bytes
       zipOut.closeEntry()
+      return false
     } else {
       project.logger.warn("Cannot add file: $sourceFile to zip, it does not exist")
+      return true
     }
   }
-  private void addFileToZip(File baseFile, String suffix, String mavenPathPrefix, ZipOutputStream zipOut) {
+  private boolean addFileToZip(File baseFile, String suffix, String mavenPathPrefix, ZipOutputStream zipOut) {
     File sourceFile = new File(baseFile.absolutePath + suffix)
     String targetPath = mavenPathPrefix + baseFile.name + suffix
     addFileToZip(sourceFile, targetPath, zipOut)

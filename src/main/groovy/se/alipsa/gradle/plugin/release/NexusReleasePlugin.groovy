@@ -19,15 +19,7 @@ class NexusReleasePlugin implements Plugin<Project> {
     TaskProvider<Task> bundleTask = project.tasks.register('bundle') { task ->
       task.group = 'publishing'
       task.description = 'Create a release bundle that can be used to publish to Maven Central'
-      //dependsOn "publishToMavenLocal"
-      def pubName = extension.mavenPublication instanceof Provider
-          ? extension.mavenPublication.orNull?.name
-          : extension.mavenPublication?.name ?: 'maven'
-
-      if (pubName) {
-        task.dependsOn "generatePomFileFor${pubName.capitalize()}Publication"
-        task.dependsOn "sign${pubName.capitalize()}Publication"
-      }
+      dependsOn "publishToMavenLocal"
 
       task.doLast {
         def pub = getPublication(extension)
@@ -57,8 +49,6 @@ class NexusReleasePlugin implements Plugin<Project> {
         if (!zipFile.exists()) {
           throw new GradleException("Failed to create release bundle for publication ${pub.name}")
         }
-
-        project.logger.lifecycle("Bundle created at ${zipFile.absolutePath}")
       }
     }
 
