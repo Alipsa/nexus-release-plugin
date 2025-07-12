@@ -137,7 +137,7 @@ class NexusReleasePlugin implements Plugin<Project> {
     )
   }
 
-  def generateChecksum(File file, String algo, Project project) {
+  static def generateChecksum(File file, String algo, Project project) {
     String extension = algo.toLowerCase().replace('-', '')
     def checksumFile = new File("${file.absolutePath}.${extension}")
     if (checksumFile.exists()) {
