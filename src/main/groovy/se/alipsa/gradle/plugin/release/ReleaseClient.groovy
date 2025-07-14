@@ -19,7 +19,7 @@ class ReleaseClient {
   MavenPublication mavenPublication
 
   ReleaseClient(Logger log, Project project, String nexusUrl, String userName, String password, MavenPublication mavenPublication) {
-    wsClient = new CentralPortalClient(log)
+    wsClient = new CentralPortalClient(log, nexusUrl)
     this.project = project
     this.projectGroup = String.valueOf(project.group)
     this.nexusUrl = nexusUrl

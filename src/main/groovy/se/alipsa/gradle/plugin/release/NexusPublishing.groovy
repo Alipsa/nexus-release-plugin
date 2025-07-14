@@ -1,6 +1,6 @@
-package se.alipsa.gradle.plugin.release;
+package se.alipsa.gradle.plugin.release
 
-import groovy.transform.CompileStatic
+
 import org.gradle.api.GradleException
 import org.gradle.api.Plugin
 import org.gradle.api.Project
@@ -11,10 +11,20 @@ import org.gradle.api.publish.maven.MavenPublication
  * This plugin is an alternative to the nexus publish plugin which for some of
  * my more complex projects did not do what I wanted it to do.
  */
-class OldNexusReleasePlugin implements Plugin<Project> {
+class NexusPublishing {
+
+  NexusReleasePluginExtension extension
+
+  NexusPublishing(NexusReleasePluginExtension extension) {
+    this.extension = extension
+  }
 
   void apply(Project project) {
-    def extension = project.extensions.create('nexusReleasePlugin', NexusReleasePluginExtension)
+    if (extension.nexusUrl.getOrNull() == null) {
+      extension.nexusUrl = project.version.contains("SNAPSHOT")
+          ? "https://oss.sonatype.org/content/repositories/snapshots/"
+          : "https://oss.sonatype.org/service/local/staging/deploy/maven2/"
+    }
     project.pluginManager.apply('signing')
     project.pluginManager.apply('maven-publish')
 

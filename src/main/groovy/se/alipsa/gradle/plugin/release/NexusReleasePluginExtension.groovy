@@ -16,6 +16,8 @@ class NexusReleasePluginExtension {
   final Property<String> userName
   final Property<String> password
   final Property<MavenPublication> mavenPublication
+  final Property<PublishingType> publishingType
+
   // ✅ Optional references to tasks
   TaskProvider<Task> bundleTask
   TaskProvider<Task> releaseTask
@@ -26,6 +28,7 @@ class NexusReleasePluginExtension {
     userName = objects.property(String)
     password = objects.property(String)
     mavenPublication = objects.property(MavenPublication)
+    publishingType = objects.property(PublishingType).convention(PublishingType.CENTRAL)
   }
 
   void setNexusUrl(String url) {
@@ -43,4 +46,9 @@ class NexusReleasePluginExtension {
   void setMavenPublication(MavenPublication publication) {
     mavenPublication.set(publication)
   }
+
+  void setPublishingType(PublishingType type) {
+    publishingType.set(type)
+  }
+
 }

@@ -15,18 +15,64 @@ sonatypePassword=myPassw0rdToken
 ```
 
 Then you use the plugin in your build.gradle as follows:
-
 ```groovy
 
 plugins {
   // your other plugins...
-  id 'signing'
-  id 'maven-publish'
+   id 'signing'
+   id 'maven-publish'
+   id("se.alipsa.nexus-release-plugin") version '2.0.0'
 }
 
-ext.nexusUrl = version.contains("SNAPSHOT")
-    ? "https://oss.sonatype.org/content/repositories/snapshots/"
-    : "https://oss.sonatype.org/service/local/staging/deploy/maven2/"
+publishing {
+  publications {
+    maven(MavenPublication) {
+      from components.java
+
+      artifact(javadocJar)
+      artifact(sourcesJar)
+      pom {
+        name = 'Your project name'
+        description = "${project.description}"
+        url = "https://github.com/yourGroup/yourProject"
+        licenses {
+          license {
+            name = 'MIT License'
+            url = 'https://raw.githubusercontent.com/yourGroup/yourProject/main/LICENSE'
+          }
+        }
+        developers {
+          developer {
+            id = 'nn'
+            name = 'Full Name'
+          }
+        }
+        scm {
+          url = 'https://github.com/yourGroup/yourProject/tree/main'
+          connection = 'scm:git:https://github.com/yourGroup/yourProject.git'
+          developerConnection = 'scm:git:https://github.com/yourGroup/yourProject.git'
+        }
+      }
+    }
+  }
+}
+
+nexusReleasePlugin {
+   userName = sonatypeUsername
+   password = sonatypePassword
+   mavenPublication = publishing.publications.maven
+}
+```
+
+To publish to an old style nexus (ossrh) you can instead do:
+```groovy
+
+plugins {
+  // your other plugins...
+   id 'signing'
+   id 'maven-publish'
+   id("se.alipsa.nexus-release-plugin") version '2.0.0'
+}
 
 pluginManagement {
     repositories {
@@ -81,12 +127,10 @@ publishing {
   }
 }
 
-// Conditionally apply it if credentials are set allows 
-// project members who cannot publish to use the build script smoothly
-if (project.ext.properties.sonatypeUsername) {
-  apply plugin: 'se.alipsa.nexus-release-plugin'
-  nexusReleasePlugin.nexusUrl = nexusUrl
-  nexusReleasePlugin.userName = sonatypeUsername
-  nexusReleasePlugin.password = sonatypePassword
+nexusReleasePlugin {
+   userName = sonatypeUsername
+   password = sonatypePassword
+   mavenPublication = publishing.publications.maven
+   publishingType = PublishingType.NEXUS
 }
 ```
