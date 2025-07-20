@@ -75,7 +75,7 @@ class TestFixtures {
       }
       
       nexusReleasePlugin {
-        nexusUrl = nexusReleaseUrl // Optional, will default to the "standard" sonatype cetral publishing url
+        nexusUrl = nexusReleaseUrl // Optional, will default to the "standard" sonatype central publishing url
         userName = '${userName}'
         password = '${password}'
         mavenPublication = publishing.publications.maven
