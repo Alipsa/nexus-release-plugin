@@ -158,7 +158,13 @@ class CentralPortalClient extends WsClient {
     String endPoint = "$publishUrl/publisher/status?id=${deploymentId}"
     Map<String, Object> result = post(endPoint, null, userName, password)
     //project.logger.lifecycle("getStatus result: $result")
-    def body = new JsonSlurper().parseText(result.get(BODY) as String) as Map
+    def body
+    try {
+      body = new JsonSlurper().parseText(result.get(BODY) as String) as Map
+    } catch (Exception e) {
+      project.logger.error("Failed to parse JSON response for deployment ID ${deploymentId}: ${e.message}")
+      return null
+    }
     body?.deploymentState ?: null
   }
 }
