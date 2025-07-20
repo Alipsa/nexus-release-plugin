@@ -1,11 +1,6 @@
 package se.alipsa.gradle.plugin.release
 
 import groovy.ant.AntBuilder
-import org.gradle.internal.impldep.org.bouncycastle.bcpg.*
-import org.gradle.internal.impldep.org.bouncycastle.jce.provider.BouncyCastleProvider
-import org.gradle.internal.impldep.org.bouncycastle.openpgp.*
-import org.gradle.internal.impldep.org.bouncycastle.openpgp.operator.*
-import org.gradle.internal.impldep.org.bouncycastle.openpgp.operator.jcajce.*
 import org.gradle.testkit.runner.GradleRunner
 import org.gradle.testkit.runner.BuildResult
 import org.gradle.testkit.runner.TaskOutcome

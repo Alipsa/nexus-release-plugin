@@ -21,14 +21,8 @@ import java.security.Security
 
 class TestFixtures {
 
-  static String createNexusBuildScript(String nexusReleaseUrl) {
-    String identity = "test@example.com"
-    char[] passphrase = []
-    buildScript(generateTestPrivateKey(identity, passphrase), nexusReleaseUrl, "PublishingType.NEXUS")
-  }
-
   static String createBuildScript(String nexusReleaseUrl, String identity = "test@example.com", char[] passphrase = []) {
-    buildScript(generateTestPrivateKey(identity, passphrase), nexusReleaseUrl)
+    buildScript(generateTestPrivateKey(identity, passphrase), nexusReleaseUrl, identity, new String(passphrase))
   }
 
   static String createBuildScript() {
@@ -37,10 +31,11 @@ class TestFixtures {
     buildScript(generateTestPrivateKey(identity, passphrase))
   }
 
-  static String buildScript(String testKey, String nexusReleaseUrl='https://central.sonatype.com/api/v1/publisher/upload',
-        String publishingType="PublishingType.CENTRAL") {
+  static String buildScript(String testKey,
+                            String nexusReleaseUrl='https://central.sonatype.com/api/v1/publisher/upload',
+                            String userName = "sonaTypeUserName",
+                            String password = "sonaTypePassword") {
       """
-      import se.alipsa.gradle.plugin.release.PublishingType
       plugins {
         id 'groovy'
         id 'maven-publish'
@@ -80,11 +75,10 @@ class TestFixtures {
       }
       
       nexusReleasePlugin {
-        nexusUrl = nexusReleaseUrl
-        userName = 'sonatypeUsername'
-        password = 'sonatypePassword'
+        nexusUrl = nexusReleaseUrl // Optional, will default to the "standard" sonatype cetral publishing url
+        userName = '${userName}'
+        password = '${password}'
         mavenPublication = publishing.publications.maven
-        publishingType = ${publishingType}
       }
       """.stripIndent()
   }
