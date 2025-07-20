@@ -1,18 +1,17 @@
 package se.alipsa.gradle.plugin.release
 
-
+import groovy.transform.CompileStatic
 import org.gradle.api.GradleException
-import org.gradle.api.Plugin
 import org.gradle.api.Project
-import org.gradle.api.provider.Provider
-import org.gradle.api.publish.maven.MavenPublication
 
 /**
  * This plugin is an alternative to the nexus publish plugin which for some of
  * my more complex projects did not do what I wanted it to do.
  */
+@CompileStatic
 class NexusPublishing {
-
+  static final String RESPONSE_CODE = WsClient.RESPONSE_CODE
+  static final String BODY = WsClient.BODY
   NexusReleasePluginExtension extension
 
   NexusPublishing(NexusReleasePluginExtension extension) {
@@ -20,80 +19,114 @@ class NexusPublishing {
   }
 
   void apply(Project project) {
-    if (extension.nexusUrl.getOrNull() == null) {
-      extension.nexusUrl = project.version.contains("SNAPSHOT")
-          ? "https://oss.sonatype.org/content/repositories/snapshots/"
-          : "https://oss.sonatype.org/service/local/staging/deploy/maven2/"
-    }
-    project.pluginManager.apply('signing')
-    project.pluginManager.apply('maven-publish')
+    def extension = project.extensions.create('nexusReleasePlugin', NexusReleasePluginExtension)
+    project.tasks.register('release') {
+      project.logger.info("Alipsa Nexus Release Plugin, releasing $project.group:$project.name:$project.version")
+      it.dependsOn(project.tasks.named('publishMavenPublicationToMavenRepository'))
 
-    def releaseTask = project.tasks.register('release') {
-      it.group = "publishing"
-      it.description = "Create and upload a release bundle to Nexus"
-    }
 
-    project.afterEvaluate {
-
-      if (project.version.endsWith("-SNAPSHOT")) {
-        project.logger.quiet("Alipsa Nexus Release Plugin: A snapshot cannot be released, publish is enough (or maybe you forgot to change the version?")
+      def log = project.logger
+      NexusClient releaseClient = new NexusClient(project, extension)
+      if ("$project.version".endsWith("-SNAPSHOT")) {
+        log.quiet("NexusReleasePlugin: A snapshot cannot be released, publish is enough (or maybe you forgot to change the version?")
         return
       }
-      project.logger.lifecycle("Alipsa Nexus Release Plugin, releasing $project.group:$project.name:$project.version")
+      it.doLast {
 
-      def signTask = project.tasks.findByName('signMavenPublication')
-      if (signTask != null) {
-        releaseTask.configure { it.dependsOn(signTask) }
-      } else {
-        project.logger.warn("NexusReleasePlugin: signMavenPublication task not found, skipping dependency wiring")
-      }
+        String profileId = releaseClient.findStagingProfileId()
 
-      releaseTask.configure {
-        doLast {
+        if (profileId == null || profileId.isBlank()) {
+          throw new GradleException("Failed to find the staging profile id")
+        } else {
+          log.lifecycle "NexusReleasePlugin found a published project for $project with profileId = $profileId"
+        }
+        String stagingRepoId = releaseClient.findStagingRepositoryId(profileId)
+        // println "NexusReleasePlugin, stagingRepoId = $stagingRepoId"
+        if (stagingRepoId == null || stagingRepoId.isBlank()) {
+          throw new GradleException("Failed to find the staging repo id")
+        }
 
-          def pub = extension.mavenPublication instanceof Provider
-              ? extension.mavenPublication.get()
-              : extension.mavenPublication
-          if (!(pub instanceof MavenPublication)) {
-            throw new GradleException("Invalid publication configured in nexusReleasePlugin.mavenPublication")
+        log.lifecycle("Closing staging repo id $stagingRepoId for project $project")
+        Map<String, Object> closeResponse = releaseClient.closeStagingRepository(
+            stagingRepoId,
+            profileId
+        )
+        Number closeResponseCode = closeResponse[RESPONSE_CODE] as Number
+        if (closeResponseCode >= 300) {
+          log.error "Close request failed result = $closeResponseCode, body = ${closeResponse[BODY]}"
+          throw new GradleException("Failed to close the staging repo $stagingRepoId")
+        } else {
+          log.lifecycle "$stagingRepoId closing request sent successfully with response code $closeResponseCode, waiting 15s to allow closing to finish"
+          Thread.sleep(15000)
+        }
+
+        String status = 'open'
+        int loopCount = 0
+        while(loopCount < 20) {
+          sleep(15000)
+          status = releaseClient.getStagingRepositoryStatus(stagingRepoId)
+          //log.lifecycle"Status is $status"
+          if ('closed' == status) {
+            log.lifecycle "Closing operation completed!"
+            break
           }
-          def log = project.logger
-          ReleaseClient releaseClient = new ReleaseClient(
-              log,
-              project,
-              extension.nexusUrl.getOrNull(),
-              extension.userName.getOrNull(),
-              extension.password.getOrNull(),
-              pub as MavenPublication
+          loopCount++
+          log.lifecycle("Waiting for close operation to finish, retry $loopCount, status is $status")
+        }
+        if ('closed' != status) {
+          log.error "Failed to close staging repository $stagingRepoId, status is $status"
+          throw new GradleException("Failed to close staging repository $stagingRepoId")
+        }
+        log.lifecycle("Waiting 15s before attempting to promote...")
+        Thread.sleep(15000)
+        log.lifecycle "Promoting $stagingRepoId for project $project"
+        Map<String, Object> promoteResponse = releaseClient.promoteStagingRepository(
+            stagingRepoId,
+            profileId
+        )
+
+        Integer responseCode = promoteResponse[RESPONSE_CODE] as Integer
+        if (responseCode >= 300) {
+          log.error "Promote request failed result = ${promoteResponse[RESPONSE_CODE]}, body = ${promoteResponse[BODY]}"
+          throw new GradleException("Failed to promote the staging repo $stagingRepoId")
+        } else {
+          log.lifecycle "$stagingRepoId promote request sent successfully (${promoteResponse[RESPONSE_CODE]})"
+        }
+
+        log.lifecycle"Waiting 20 seconds..."
+        Thread.sleep(20000)
+        loopCount = 0
+        while(loopCount < 10) {
+
+          status = releaseClient.getStagingRepositoryStatus(stagingRepoId)
+          //log.lifecycle"Status is $status"
+          if ('released' == status) {
+            log.lifecycle "Closing operation completed!"
+            break
+          }
+          loopCount++
+          sleep(15000)
+          log.lifecycle("Waiting for promote operation to finish, retry $loopCount, status is $status")
+        }
+
+        log.lifecycle("Staging repository is now in status '$status'")
+
+        if (status == 'released') {
+          log.lifecycle "Dropping repository $stagingRepoId"
+          Map<String, Object> dropResponse = releaseClient.dropStagingRepository(
+              stagingRepoId,
+              profileId
           )
-          try {
-            File bundle = releaseClient.createBundle()
-            if (bundle == null || !bundle.exists()) {
-              throw new GradleException("Failed to create release bundle for publication ${pub.name}")
-            }
-            log.lifecycle("Bundle created at ${bundle.absolutePath}")
 
-            String deploymentId = releaseClient.upload(bundle)
-
-            if (deploymentId == null || deploymentId.isBlank()) {
-              throw new GradleException("Failed to find the staging profile id")
-            } else {
-              log.lifecycle "Project $project published with deploymentId = $deploymentId"
-            }
-            String status = releaseClient.getStatus(deploymentId)
-            while (!['PUBLISHED', 'FAILED'].contains(status)) {
-              log.lifecycle("Deploy status is $status")
-              Thread.sleep(10000)
-              status = releaseClient.getStatus(deploymentId)
-            }
-            if (status == 'PUBLISHED') {
-              log.lifecycle("Project $project published successfully!")
-            } else {
-              throw new GradleException("Failed to release $project with deploymentId $deploymentId")
-            }
-          } catch (IOException e) {
-            throw new GradleException("Failed to publish the project: $e.message", e)
+          responseCode = dropResponse[RESPONSE_CODE] as Integer
+          if (responseCode >= 300) {
+            log.error "Drop request failed, result = ${dropResponse[RESPONSE_CODE]}, body = ${dropResponse[BODY]}"
+            throw new GradleException("Failed to drop the staging repo $stagingRepoId after promotion")
+          } else {
+            log.lifecycle "$stagingRepoId dropped sucessfully"
           }
+        } else {
+          log.warn("You need to drop $stagingRepoId manually as doing it directly would be too soon")
         }
       }
     }

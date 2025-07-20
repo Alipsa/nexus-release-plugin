@@ -1,6 +1,8 @@
 package se.alipsa.gradle.plugin.release
 
 import groovy.json.JsonSlurper
+import groovy.transform.CompileDynamic
+import groovy.transform.CompileStatic
 import org.gradle.api.Project
 import org.gradle.api.logging.Logger
 
@@ -10,21 +12,38 @@ import java.time.Instant
  * This contains basic REST operations towards a Sonatype Nexus server
  * The REST documentation is here: https://oss.sonatype.org/nexus-staging-plugin/default/docs/rest.html
  */
+@CompileStatic
 class NexusClient extends WsClient {
 
+  String publishUrl
   Logger log
+  Project project
+  String userName
+  String password
 
-  NexusClient(Logger log) {
+  NexusClient(Project project, NexusReleasePluginExtension extension) {
     this.log = log
+    String url = extension.nexusUrl.getOrNull()
+    if ( url == null) {
+      url = "$project.version".contains("SNAPSHOT")
+          ? "https://oss.sonatype.org/content/repositories/snapshots/"
+          : "https://oss.sonatype.org/service/local/staging/deploy/maven2/"
+    }
+    this.publishUrl = url
+    this.project = project
+    this.userName = extension.userName.getOrNull()
+    this.password = extension.password.getOrNull()
   }
 
-  String findStagingProfileId(String groupName, String url, String userName, String password) {
+  @CompileDynamic
+  String findStagingProfileId() {
+    def groupName = String.valueOf(project.group)
     //println("Searching for a match for $groupName")
-    if (url == null) {
+    if (publishUrl == null) {
       log.error("nexusUrl is not set cannot continue")
       return null
     }
-    Map<String, Object> response = get("${baseUrl(url)}/service/local/staging/profiles", userName, password)
+    Map<String, Object> response = get("${baseUrl(publishUrl)}/service/local/staging/profiles", userName, password)
 
     String body = response[BODY]
     def stagingProfiles = new JsonSlurper().parseText(body)
@@ -49,9 +68,14 @@ class NexusClient extends WsClient {
     return profile.id
   }
 
-  String findStagingRepositoryId(String profileId, String url, String userName, String password) {
+  @CompileDynamic
+  String findStagingRepositoryId(String profileId) {
     //https://oss.sonatype.org/service/local/staging/profile_repositories
-    Map<String, Object> response = get("${baseUrl(url)}/service/local/staging/profile_repositories", userName, password)
+    Map<String, Object> response = get(
+        "${baseUrl(publishUrl)}/service/local/staging/profile_repositories",
+        userName,
+        password
+    )
     String body = response[BODY]
     def stagingRepos = new JsonSlurper().parseText(body)
 
@@ -70,55 +94,61 @@ class NexusClient extends WsClient {
     return repo?.repositoryId
   }
 
-  String getStagingRepositoryStatus(String stagingRepositoryId, String url, String userName, String password) {
+  @CompileDynamic
+  String getStagingRepositoryStatus(String stagingRepositoryId) {
     //https://oss.sonatype.org/service/local/staging/profile_repositories
-    Map<String, Object> response = get("${baseUrl(url)}/service/local/staging/repository/$stagingRepositoryId", userName, password)
+    Map<String, Object> response = get(
+        "${baseUrl(publishUrl)}/service/local/staging/repository/$stagingRepositoryId",
+        userName,
+        password
+    )
     String body = response[BODY]
     def stagingRepo = new JsonSlurper().parseText(body)
 
     return stagingRepo?.type
   }
 
-  Map<String, Object> closeStagingRepository(String stagingRepoId, String profileId, String publishUrl,
-                                                    String userName, String password, Project project) {
-    // /service/local/staging/profiles/<profile-id>/finish
-    String url = "${baseUrl(publishUrl)}/service/local/staging/profiles/$profileId/finish"
-    String payload = """{
-      "data":{
-        "stagedRepositoryId":"${stagingRepoId}",
-        "description":"${project.group}:${project.name} closed by nexus release plugin"
-      }
-    }"""
+  Map<String, Object> closeStagingRepository(String stagingRepoId, String profileId) {
+    postToStaging(
+        "${baseUrl(publishUrl)}/service/local/staging/profiles/$profileId/finish",
+        """{
+          "data":{
+            "stagedRepositoryId":"${stagingRepoId}",
+            "description":"${project.group}:${project.name} closed by nexus release plugin"
+          }
+        }"""
+    )
+  }
+
+  Map<String, Object> promoteStagingRepository(String stagingRepoId, String profileId) {
+    postToStaging(
+        "${baseUrl(publishUrl)}/service/local/staging/profiles/$profileId/promote",
+        """{
+        "data":{
+          "stagedRepositoryId":"${stagingRepoId}",
+          "description":"${project.group}:${project.name} promoted by nexus release plugin"
+        }
+      }"""
+    )
+  }
+
+  Map<String, Object> dropStagingRepository(String stagingRepoId, String profileId) {
+    postToStaging(
+        "${baseUrl(publishUrl)}/service/local/staging/profiles/$profileId/drop",
+        """{
+          "data":{
+            "stagedRepositoryId":"${stagingRepoId}",
+            "description":"${project.group}:${project.name} dropped by nexus release plugin"
+          }
+        }"""
+    )
+  }
+
+  Map<String, Object> postToStaging(String url, String payload) {
     return post(url, payload.bytes, userName, password)
   }
 
-  Map<String, Object> promoteStagingRepository(String stagingRepoId, String profileId, String publishUrl,
-                                                      String userName, String password, Project project) {
-    // /staging/bulk/promote
-    String url = "${baseUrl(publishUrl)}/service/local/staging/profiles/$profileId/promote"
-    String payload = """{
-      "data":{
-        "stagedRepositoryId":"${stagingRepoId}",
-        "description":"${project.group}:${project.name} promoted by nexus release plugin"
-      }
-    }"""
-    return post(url, payload.bytes, userName, password)
-  }
-
-  Map<String, Object> dropStagingRepository(String stagingRepoId, String profileId, String publishUrl,
-                                                   String userName, String password, Project project) {
-    // /staging/bulk/promote
-    String url = "${baseUrl(publishUrl)}/service/local/staging/profiles/$profileId/drop"
-    String payload = """{
-      "data":{
-        "stagedRepositoryId":"${stagingRepoId}",
-        "description":"${project.group}:${project.name} dropped by nexus release plugin"
-      }
-    }"""
-    return post(url, payload.bytes, userName, password)
-  }
-
-  String auth(String username, String password) {
+      String auth(String username, String password) {
     return "Basic " + Base64.getEncoder().encodeToString((username + ":" + password).getBytes())
   }
 

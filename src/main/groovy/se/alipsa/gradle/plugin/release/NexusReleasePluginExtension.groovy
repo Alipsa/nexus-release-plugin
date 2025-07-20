@@ -24,11 +24,17 @@ class NexusReleasePluginExtension {
 
   @Inject
   NexusReleasePluginExtension(ObjectFactory objects) {
-    nexusUrl = objects.property(String)
     userName = objects.property(String)
     password = objects.property(String)
     mavenPublication = objects.property(MavenPublication)
     publishingType = objects.property(PublishingType).convention(PublishingType.CENTRAL)
+    String defaultUrl
+    if (publishingType.get() == PublishingType.CENTRAL) {
+      defaultUrl = CentralPortalClient.CENTRAL_PORTAL_URL
+    } else {
+      defaultUrl = null
+    }
+    nexusUrl = objects.property(String).convention(defaultUrl)
   }
 
   void setNexusUrl(String url) {

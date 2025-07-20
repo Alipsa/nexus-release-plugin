@@ -45,7 +45,7 @@ abstract class WsClient {
       os.close()
     }
 
-    int responseCode = conn.getResponseCode()
+    Integer responseCode = conn.getResponseCode()
     var responseHeaders = conn.getHeaderFields()
     InputStream is = null
     try {
