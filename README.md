@@ -1,39 +1,27 @@
 # nexus-release-plugin
-Automates the release process in Nexus (e.g. Sonatype OSSRH) after upload (publish) has completed.
+Automates the release process to Sonatype Central.
 
-The main differences compared to the [Nexus publish plugin](https://github.com/gradle-nexus/publish-plugin) are:
-1. It assumes you use the maven publish plugin to upload your artifacts
-2. Any subproject (module) can use it in contrast to the nexus publish plugin which must be applied on the 
-   root project only allowing you to publish modules independently.
+Assumptions are:
+1. It assumes you use the maven publish plugin to define your artifacts
+2. Any subproject (module) can use it in contrast to the nexus publish plugin which must be applied on the root project, allowing you to publish modules independently.
 
 To use it you need to add your sonatype username token and password token to
 ~/.gradle/gradle.properties, e.g:
 
 ```properties
-sonatypeUsername=myUSerToken
+sonatypeUsername=myUserToken
 sonatypePassword=myPassw0rdToken
 ```
+Alternatively, you can set them as system properties or as environment variables.
 
 Then you use the plugin in your build.gradle as follows:
-
 ```groovy
 
 plugins {
   // your other plugins...
-  id 'signing'
-  id 'maven-publish'
-}
-
-ext.nexusUrl = version.contains("SNAPSHOT")
-    ? "https://oss.sonatype.org/content/repositories/snapshots/"
-    : "https://oss.sonatype.org/service/local/staging/deploy/maven2/"
-
-pluginManagement {
-    repositories {
-        maven {
-            url = mavenCentral().url
-        }
-    }
+   id 'signing'
+   id 'maven-publish'
+   id("se.alipsa.nexus-release-plugin") version '2.0.0'
 }
 
 publishing {
@@ -67,26 +55,23 @@ publishing {
       }
     }
   }
-  // This will upload to Sonatype Nexus (OSSRH) if credentials are present 
-  if (project.ext.properties.sonatypeUsername) {
-    repositories {
-      maven {
-        credentials {
-          username = sonatypeUsername
-          password = sonatypePassword
-        }
-        url = nexusUrl
-      }
-    }
-  }
 }
 
-// Conditionally apply it if credentials are set allows 
-// project members who cannot publish to use the build script smoothly
-if (project.ext.properties.sonatypeUsername) {
-  apply plugin: 'se.alipsa.nexus-release-plugin'
-  nexusReleasePlugin.nexusUrl = nexusUrl
-  nexusReleasePlugin.userName = sonatypeUsername
-  nexusReleasePlugin.password = sonatypePassword
+nexusReleasePlugin {
+   userName = sonatypeUsername
+   password = sonatypePassword
+   mavenPublication = publishing.publications.maven
+}
+```
+
+If you want to publish to another url that behaves just like the Central Publishing API, you 
+can set the property `nexusUrl` in the nexusReleasePlugin e.g:
+
+```groovy
+nexusReleasePlugin {
+   nexusUrl = "https://some.host/api/v1"
+   userName = sonatypeUsername
+   password = sonatypePassword
+   mavenPublication = publishing.publications.maven
 }
 ```

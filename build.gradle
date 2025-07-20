@@ -8,8 +8,8 @@ plugins {
 }
 
 group = 'se.alipsa'
-version = '1.0.1'
-description = 'Automates the release process in Nexus (e.g. Sonatype OSSRH) after upload (publish) has completed'
+version = '2.0.0-SNAPSHOT'
+description = 'Automates the release process in Central Portal after signing has completed'
 
 gradlePlugin {
   website.set("https://github.com/Alipsa/nexus-release-plugin")
@@ -17,10 +17,10 @@ gradlePlugin {
   plugins {
     simplePlugin {
       id = "${project.group}.${project.name}"
-      implementationClass = 'se.alipsa.groovy.NexusReleasePlugin'
+      implementationClass = 'se.alipsa.gradle.plugin.release.NexusReleasePlugin'
       displayName = "Gradle Nexus Release Plugin"
       description = project.description
-      tags.set(["nexus", "publish", "release", "ossrh", "sonatype"])
+      tags.set(["publish", "release", "central", "portal", "sonatype"])
     }
   }
 }
@@ -33,11 +33,16 @@ repositories {
 }
 
 dependencies {
-  def groovyVersion = "4.0.26"
+  def groovyVersion = "4.0.27"
   compileOnly "org.apache.groovy:groovy:${groovyVersion}"
 
-  testImplementation 'org.junit.jupiter:junit-jupiter:5.12.0'
+  testImplementation gradleTestKit()
+  testImplementation 'org.junit.jupiter:junit-jupiter:5.13.0'
+  testImplementation 'org.junit.platform:junit-platform-launcher:1.13.0'
   testImplementation "org.apache.groovy:groovy:${groovyVersion}"
+  testImplementation 'com.squareup.okhttp3:mockwebserver:4.12.0'
+  testImplementation 'org.testcontainers:testcontainers:1.19.7' // Use latest
+  testImplementation 'org.testcontainers:junit-jupiter:1.19.7'
 }
 
 java {
@@ -79,32 +84,20 @@ publishing {
 }
 
 if (project.properties['signing.keyId'] == null) {
-  tasks.project.signPluginMavenPublication {
-    enabled = false
+  afterEvaluate {
+    tasks.project.signPluginMavenPublication {
+      enabled = false
+    }
+    tasks.project.signSimplePluginPluginMarkerMavenPublication {
+      enabled = false
+    }
   }
-  tasks.project.signSimplePluginPluginMarkerMavenPublication {
-    enabled = false
-  }
+
 }
 
-/*
-tasks.register('signPluginMavenPublication') {
-  if (project.properties['signing.keyId'] != null) {
-    project.logger.lifecycle("Signing artifacts...")
-    signPluginMavenPublication publishing.publications.pluginMaven
-  } else {
-    project.logger.lifecycle("signing.keyId is not defined, skipping signPluginMavenPublication...")
-  }
+test {
+  useJUnitPlatform()
 }
-
-tasks.register('signSimplePluginPluginMarkerMavenPublication') {
-  if (project.properties['signing.keyId'] != null) {
-    project.logger.lifecycle("Signing artifacts...")
-    signSimplePluginPluginMarkerMavenPublication publishing.publications.pluginMaven
-  } else {
-    project.logger.lifecycle("signing.keyId is not defined, signSimplePluginPluginMarkerMavenPublication...")
-  }
-}*/
 
 signing {
   if (project.properties['signing.keyId'] != null) {
