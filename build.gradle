@@ -3,12 +3,12 @@ plugins {
   id 'java-gradle-plugin'
   id 'signing'
   id 'maven-publish'
-  id("com.gradle.plugin-publish") version "1.3.1"
-  id "com.github.ben-manes.versions" version "0.51.0"
+  id("com.gradle.plugin-publish") version "2.0.0"
+  id "com.github.ben-manes.versions" version "0.52.0"
 }
 
 group = 'se.alipsa'
-version = '2.0.0-SNAPSHOT'
+version = '2.0.0'
 description = 'Automates the release process in Central Portal after signing has completed'
 
 gradlePlugin {
@@ -33,16 +33,16 @@ repositories {
 }
 
 dependencies {
-  def groovyVersion = "4.0.27"
+  def groovyVersion = "5.0.0"
   compileOnly "org.apache.groovy:groovy:${groovyVersion}"
 
   testImplementation gradleTestKit()
-  testImplementation 'org.junit.jupiter:junit-jupiter:5.13.0'
-  testImplementation 'org.junit.platform:junit-platform-launcher:1.13.0'
+  testImplementation 'org.junit.jupiter:junit-jupiter:5.13.4'
+  testImplementation 'org.junit.platform:junit-platform-launcher:1.13.4'
   testImplementation "org.apache.groovy:groovy:${groovyVersion}"
-  testImplementation 'com.squareup.okhttp3:mockwebserver:4.12.0'
-  testImplementation 'org.testcontainers:testcontainers:1.19.7' // Use latest
-  testImplementation 'org.testcontainers:junit-jupiter:1.19.7'
+  testImplementation 'com.squareup.okhttp3:mockwebserver:5.1.0'
+  testImplementation 'org.testcontainers:testcontainers:1.21.3' // Use latest
+  testImplementation 'org.testcontainers:junit-jupiter:1.21.3'
 }
 
 java {
