@@ -59,10 +59,8 @@ class CentralUploadApiTest {
     def project = ProjectBuilder.builder()
         .withProjectDir(testProjectDir)
         .build()
-    NexusReleasePluginExtension ext = new NexusReleasePluginExtension(project.objects)
     println "TargetUrl = $targetUrl"
-    ext.setNexusUrl(targetUrl)
-    CentralPortalClient portalClient = new CentralPortalClient(project, ext)
+    CentralPortalClient portalClient = new CentralPortalClient(project.logger, targetUrl, null, null)
     portalClient.upload(zipFile)
 
     // Inspect request to the mock server

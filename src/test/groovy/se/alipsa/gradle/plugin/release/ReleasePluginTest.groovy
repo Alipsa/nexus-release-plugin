@@ -13,6 +13,43 @@ import static org.junit.jupiter.api.Assertions.*
 class ReleasePluginTest {
 
   @Test
+  void configurationCacheCompatibility() throws IOException {
+    File testProjectDir = TestFixtures.createTestProject()
+
+    // First run - should store configuration cache
+    BuildResult result1 = GradleRunner.create()
+        .withProjectDir(testProjectDir)
+        .withArguments("bundle", "--configuration-cache")
+        .withPluginClasspath()
+        .forwardOutput()
+        .build()
+
+    assertEquals(TaskOutcome.SUCCESS, result1.task(":bundle").getOutcome())
+    assertTrue(result1.output.contains("Configuration cache entry stored"),
+        "First run should store configuration cache")
+
+    // Clean build outputs but keep configuration cache
+    new File(testProjectDir, "build/zips").deleteDir()
+    new File(testProjectDir, "build/libs").deleteDir()
+
+    // Second run - should reuse configuration cache
+    BuildResult result2 = GradleRunner.create()
+        .withProjectDir(testProjectDir)
+        .withArguments("bundle", "--configuration-cache")
+        .withPluginClasspath()
+        .forwardOutput()
+        .build()
+
+    assertEquals(TaskOutcome.SUCCESS, result2.task(":bundle").getOutcome())
+    assertTrue(result2.output.contains("Configuration cache entry reused") ||
+               result2.output.contains("Reusing configuration cache"),
+        "Second run should reuse configuration cache")
+
+    AntBuilder ant = new AntBuilder()
+    ant.delete dir: testProjectDir.parentFile
+  }
+
+  @Test
   void zipIsCreatedAfterPublish() throws IOException {
     File testProjectDir = TestFixtures.createTestProject()
 
