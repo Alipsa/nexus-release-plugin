@@ -6,8 +6,8 @@
 - org.apache.groovy:groovy [5.0.0 -> 4.0.30]
 - org.junit.jupiter:junit-jupiter [5.13.4 -> 6.0.3]
 - org.junit.platform:junit-platform-launcher [1.13.4 -> 6.0.3]
-- org.testcontainers:junit-jupiter [1.21.3 -> 1.21.4]
 - org.testcontainers:testcontainers [1.21.3 -> 2.0.3]
+- org.testcontainers:testcontainers-junit-jupiter [1.21.3 (junit-jupiter) -> 2.0.3]
 - Fix: `release` now uses `mavenPublication.version` (not `project.version`) for snapshot gating and bundle validation, so differing project/publication versions work correctly.
 - Fix: checksums are now regenerated on every bundle build to prevent stale `.md5`/`.sha1` files from being reused.
 - Added compatibility matrix test coverage for Gradle 8.13 and 9.3.1.

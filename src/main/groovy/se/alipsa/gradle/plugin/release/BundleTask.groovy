@@ -17,6 +17,7 @@ import org.gradle.api.tasks.TaskAction
 
 import java.security.DigestOutputStream
 import java.security.MessageDigest
+import java.nio.charset.StandardCharsets
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
@@ -68,21 +69,10 @@ abstract class BundleTask extends DefaultTask {
         String publicationNameValue = publicationName.get()
         List<File> artifacts = artifactFiles.get()
 
-        // Add md5 and sha1 checksums to all artifacts
-        logger.debug("Adding checksums to artifacts...")
-        artifacts.each { File artifactFile ->
-            CHECKSUM_ALGOS.each { algo ->
-                generateChecksum(artifactFile, algo)
-            }
-        }
-
         File publicationDir = publicationDirectory.get().asFile
         File pomFile = new File(publicationDir, "pom-default.xml")
         if (!pomFile.exists()) {
             throw new GradleException("Expected POM file at ${pomFile.absolutePath} but it was not found. Has 'publishToMavenLocal' completed successfully?")
-        }
-        CHECKSUM_ALGOS.each { algo ->
-            generateChecksum(pomFile, algo)
         }
 
         // Create the bundle zip
@@ -113,7 +103,7 @@ abstract class BundleTask extends DefaultTask {
                 }
 
                 String name = file.name
-                if (!name.matches(/.*\.(jar)(\.asc|\.md5|\.sha1)?$/)) return
+                if (!name.endsWith('.jar')) return
 
                 String zipEntryName = mavenPathPrefix + name
                 logger.debug("Adding file: $zipEntryName")
@@ -122,8 +112,9 @@ abstract class BundleTask extends DefaultTask {
                 zipOut.closeEntry()
 
                 missingFilesDetected = missingFilesDetected || addFileToZip(file, ".asc", mavenPathPrefix, zipOut)
-                missingFilesDetected = missingFilesDetected || addFileToZip(file, ".md5", mavenPathPrefix, zipOut)
-                missingFilesDetected = missingFilesDetected || addFileToZip(file, ".sha1", mavenPathPrefix, zipOut)
+                CHECKSUM_ALGOS.each { String algo ->
+                    addChecksumToZip(file, algo, "${mavenPathPrefix}${file.name}.${checksumExtension(algo)}", zipOut)
+                }
             }
 
             // 2. Add the POM manually (it may not be in artifacts)
@@ -136,8 +127,9 @@ abstract class BundleTask extends DefaultTask {
                 zipOut << pomFile.bytes
                 zipOut.closeEntry()
                 missingFilesDetected = missingFilesDetected || addFileToZip(new File(publicationDir, "pom-default.xml.asc"), pomEntryName + ".asc", zipOut)
-                missingFilesDetected = missingFilesDetected || addFileToZip(new File(publicationDir, "pom-default.xml.md5"), pomEntryName + ".md5", zipOut)
-                missingFilesDetected = missingFilesDetected || addFileToZip(new File(publicationDir, "pom-default.xml.sha1"), pomEntryName + ".sha1", zipOut)
+                CHECKSUM_ALGOS.each { String algo ->
+                    addChecksumToZip(pomFile, algo, "${pomEntryName}.${checksumExtension(algo)}", zipOut)
+                }
             } else {
                 missingFilesDetected = true
             }
@@ -167,16 +159,24 @@ abstract class BundleTask extends DefaultTask {
         addFileToZip(sourceFile, targetPath, zipOut)
     }
 
-    void generateChecksum(File file, String algo) {
-        String extension = algo.toLowerCase().replace('-', '')
-        def checksumFile = new File("${file.absolutePath}.${extension}")
+    private void addChecksumToZip(File sourceFile, String algo, String targetPath, ZipOutputStream zipOut) throws IOException {
+        logger.debug("Adding generated checksum: ${targetPath}")
+        String hash = checksumFor(sourceFile, algo)
+        zipOut.putNextEntry(new ZipEntry(targetPath))
+        zipOut.write(hash.getBytes(StandardCharsets.UTF_8))
+        zipOut.closeEntry()
+    }
+
+    private static String checksumFor(File file, String algo) {
         def digest = MessageDigest.getInstance(algo)
         file.withInputStream { is ->
             new DigestOutputStream(OutputStream.nullOutputStream(), digest)
                 .withCloseable { dos -> is.transferTo(dos) }
         }
-        def hash = digest.digest().encodeHex().toString()
-        checksumFile.text = hash
-        logger.debug("Generated ${algo} for ${file.name} -> ${checksumFile.name}")
+        digest.digest().encodeHex().toString()
+    }
+
+    private static String checksumExtension(String algo) {
+        algo.toLowerCase().replace('-', '')
     }
 }
