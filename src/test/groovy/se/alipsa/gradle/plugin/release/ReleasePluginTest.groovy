@@ -15,96 +15,96 @@ class ReleasePluginTest {
   @Test
   void configurationCacheCompatibility() throws IOException {
     File testProjectDir = TestFixtures.createTestProject()
+    try {
+      // First run - should store configuration cache
+      BuildResult result1 = GradleRunner.create()
+          .withProjectDir(testProjectDir)
+          .withArguments("bundle", "--configuration-cache")
+          .withPluginClasspath()
+          .forwardOutput()
+          .build()
 
-    // First run - should store configuration cache
-    BuildResult result1 = GradleRunner.create()
-        .withProjectDir(testProjectDir)
-        .withArguments("bundle", "--configuration-cache")
-        .withPluginClasspath()
-        .forwardOutput()
-        .build()
+      assertEquals(TaskOutcome.SUCCESS, result1.task(":bundle").getOutcome())
+      assertTrue(result1.output.contains("Configuration cache entry stored"),
+          "First run should store configuration cache")
 
-    assertEquals(TaskOutcome.SUCCESS, result1.task(":bundle").getOutcome())
-    assertTrue(result1.output.contains("Configuration cache entry stored"),
-        "First run should store configuration cache")
+      // Clean build outputs but keep configuration cache
+      new File(testProjectDir, "build/zips").deleteDir()
+      new File(testProjectDir, "build/libs").deleteDir()
 
-    // Clean build outputs but keep configuration cache
-    new File(testProjectDir, "build/zips").deleteDir()
-    new File(testProjectDir, "build/libs").deleteDir()
+      // Second run - should reuse configuration cache
+      BuildResult result2 = GradleRunner.create()
+          .withProjectDir(testProjectDir)
+          .withArguments("bundle", "--configuration-cache")
+          .withPluginClasspath()
+          .forwardOutput()
+          .build()
 
-    // Second run - should reuse configuration cache
-    BuildResult result2 = GradleRunner.create()
-        .withProjectDir(testProjectDir)
-        .withArguments("bundle", "--configuration-cache")
-        .withPluginClasspath()
-        .forwardOutput()
-        .build()
-
-    assertEquals(TaskOutcome.SUCCESS, result2.task(":bundle").getOutcome())
-    assertTrue(result2.output.contains("Configuration cache entry reused") ||
-               result2.output.contains("Reusing configuration cache"),
-        "Second run should reuse configuration cache")
-
-    AntBuilder ant = new AntBuilder()
-    ant.delete dir: testProjectDir.parentFile
+      assertEquals(TaskOutcome.SUCCESS, result2.task(":bundle").getOutcome())
+      assertTrue(result2.output.contains("Configuration cache entry reused") ||
+                 result2.output.contains("Reusing configuration cache"),
+          "Second run should reuse configuration cache")
+    } finally {
+      cleanupTestProject(testProjectDir)
+    }
   }
 
   @Test
   void zipIsCreatedAfterPublish() throws IOException {
     File testProjectDir = TestFixtures.createTestProject()
+    try {
+      // Run build
+      BuildResult result = GradleRunner.create()
+          .withProjectDir(testProjectDir)
+          .withArguments("bundle")
+          .withPluginClasspath()
+          .forwardOutput()
+          .build()
 
-    // Run build
-    BuildResult result = GradleRunner.create()
-        .withProjectDir(testProjectDir)
-        .withArguments("bundle")
-        .withPluginClasspath()
-        .forwardOutput()
-        .build()
+      assertEquals(TaskOutcome.SUCCESS, result.task(":bundle").getOutcome())
 
-    assertEquals(TaskOutcome.SUCCESS, result.task(":bundle").getOutcome())
+      File zipFile = new File(testProjectDir,"build/zips/test-project-1.0.0-bundle.zip")
+      assertTrue(zipFile.exists(), "ZIP file should be created")
 
-    File zipFile = new File(testProjectDir,"build/zips/test-project-1.0.0-bundle.zip")
-    assertTrue(zipFile.exists(), "ZIP file should be created")
+      // Check contents of zip file
+      String groupId = "com.example"
+      String artifactId = "test-project"
+      String version = "1.0.0"
+      String basePath = "${groupId.replace('.', '/')}/${artifactId}/${version}/"
 
-    // Check contents of zip file
-    String groupId = "com.example"
-    String artifactId = "test-project"
-    String version = "1.0.0"
-    String basePath = "${groupId.replace('.', '/')}/${artifactId}/${version}/"
+      // Define expected filenames inside the ZIP
+      String artifactPath = basePath + artifactId + '-' + version
+      List<String> expectedEntries = [
+          artifactPath + '.jar',
+          artifactPath + '.jar.asc',
+          artifactPath + '.jar.md5',
+          artifactPath + '.jar.sha1',
+          artifactPath + '-sources.jar',
+          artifactPath + '-sources.jar.asc',
+          artifactPath + '-sources.jar.md5',
+          artifactPath + '-sources.jar.sha1',
+          artifactPath + '-javadoc.jar',
+          artifactPath + '-javadoc.jar.asc',
+          artifactPath + '-javadoc.jar.md5',
+          artifactPath + '-javadoc.jar.sha1',
+          artifactPath + '.pom',
+          artifactPath +'.pom.asc',
+          artifactPath +'.pom.md5',
+          artifactPath +'.pom.sha1'
+      ]
 
-    // Define expected filenames inside the ZIP
-    String artifactPath = basePath + artifactId + '-' + version
-    List<String> expectedEntries = [
-        artifactPath + '.jar',
-        artifactPath + '.jar.asc',
-        artifactPath + '.jar.md5',
-        artifactPath + '.jar.sha1',
-        artifactPath + '-sources.jar',
-        artifactPath + '-sources.jar.asc',
-        artifactPath + '-sources.jar.md5',
-        artifactPath + '-sources.jar.sha1',
-        artifactPath + '-javadoc.jar',
-        artifactPath + '-javadoc.jar.asc',
-        artifactPath + '-javadoc.jar.md5',
-        artifactPath + '-javadoc.jar.sha1',
-        artifactPath + '.pom',
-        artifactPath +'.pom.asc',
-        artifactPath +'.pom.md5',
-        artifactPath +'.pom.sha1'
-    ]
-
-    // Read actual ZIP entries
-    List<String> actualEntries
-    try (ZipFile zip = new ZipFile(zipFile)) {
-      actualEntries = zip.entries().collect { it.name }
+      // Read actual ZIP entries
+      List<String> actualEntries
+      try (ZipFile zip = new ZipFile(zipFile)) {
+        actualEntries = zip.entries().collect { it.name }
+      }
+      expectedEntries.each {
+        assertTrue(actualEntries.contains(it), "Expected entry not found in ZIP: $it")
+      }
+      assertEquals(expectedEntries.size(), actualEntries.size(), "Mismatch in number of entries in ZIP")
+    } finally {
+      cleanupTestProject(testProjectDir)
     }
-    expectedEntries.each {
-      assertTrue(actualEntries.contains(it), "Expected entry not found in ZIP: $it")
-    }
-    assertEquals(expectedEntries.size(), actualEntries.size(), "Mismatch in number of entries in ZIP")
-
-    AntBuilder ant = new AntBuilder()
-    ant.delete dir: testProjectDir.parentFile
   }
 
   @Test
@@ -117,20 +117,20 @@ base {
 }"""
     )
     File testProjectDir = TestFixtures.createTestProject(buildScript)
+    try {
+      BuildResult result = GradleRunner.create()
+          .withProjectDir(testProjectDir)
+          .withArguments("release")
+          .withPluginClasspath()
+          .forwardOutput()
+          .buildAndFail()
 
-    BuildResult result = GradleRunner.create()
-        .withProjectDir(testProjectDir)
-        .withArguments("release")
-        .withPluginClasspath()
-        .forwardOutput()
-        .buildAndFail()
-
-    assertTrue(result.output.contains("Bundle validation failed."))
-    assertTrue(result.output.contains("Filename mismatch"))
-    assertTrue(result.output.contains("sieparser-1.0.0.jar"))
-
-    AntBuilder ant = new AntBuilder()
-    ant.delete dir: testProjectDir.parentFile
+      assertTrue(result.output.contains("Bundle validation failed."))
+      assertTrue(result.output.contains("Filename mismatch"))
+      assertTrue(result.output.contains("sieparser-1.0.0.jar"))
+    } finally {
+      cleanupTestProject(testProjectDir)
+    }
   }
 
   @Test
@@ -142,20 +142,20 @@ base {
         ''
     )
     File testProjectDir = TestFixtures.createTestProject(buildScript)
+    try {
+      BuildResult result = GradleRunner.create()
+          .withProjectDir(testProjectDir)
+          .withArguments("release")
+          .withPluginClasspath()
+          .forwardOutput()
+          .buildAndFail()
 
-    BuildResult result = GradleRunner.create()
-        .withProjectDir(testProjectDir)
-        .withArguments("release")
-        .withPluginClasspath()
-        .forwardOutput()
-        .buildAndFail()
-
-    assertTrue(result.output.contains("Bundle validation failed."))
-    assertTrue(result.output.contains("Credentials not configured. Add the following to ~/.gradle/gradle.properties"))
-    assertFalse(result.output.contains("Post multipart to"))
-
-    AntBuilder ant = new AntBuilder()
-    ant.delete dir: testProjectDir.parentFile
+      assertTrue(result.output.contains("Bundle validation failed."))
+      assertTrue(result.output.contains("Credentials not configured. Add the following to ~/.gradle/gradle.properties"))
+      assertFalse(result.output.contains("Post multipart to"))
+    } finally {
+      cleanupTestProject(testProjectDir)
+    }
   }
 
   @Test
@@ -167,17 +167,22 @@ base {
         .replace("password = 'sonaTypePassword'", "password = ''")
 
     File testProjectDir = TestFixtures.createTestProject(buildScript)
+    try {
+      BuildResult result = GradleRunner.create()
+          .withProjectDir(testProjectDir)
+          .withArguments("release")
+          .withPluginClasspath()
+          .forwardOutput()
+          .buildAndFail()
 
-    BuildResult result = GradleRunner.create()
-        .withProjectDir(testProjectDir)
-        .withArguments("release")
-        .withPluginClasspath()
-        .forwardOutput()
-        .buildAndFail()
+      assertTrue(result.output.contains("Credentials not configured. Add the following to ~/.gradle/gradle.properties"))
+      assertFalse(result.output.contains("A snapshot cannot be released"))
+    } finally {
+      cleanupTestProject(testProjectDir)
+    }
+  }
 
-    assertTrue(result.output.contains("Credentials not configured. Add the following to ~/.gradle/gradle.properties"))
-    assertFalse(result.output.contains("A snapshot cannot be released"))
-
+  private static void cleanupTestProject(File testProjectDir) {
     AntBuilder ant = new AntBuilder()
     ant.delete dir: testProjectDir.parentFile
   }
