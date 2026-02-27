@@ -33,7 +33,7 @@ repositories {
 }
 
 dependencies {
-  def groovyVersion = "5.0.4"
+  def groovyVersion = "4.0.30"
   compileOnly "org.apache.groovy:groovy:${groovyVersion}"
 
   testImplementation gradleTestKit()
