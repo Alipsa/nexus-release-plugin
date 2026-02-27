@@ -51,7 +51,7 @@ class NexusReleasePlugin implements Plugin<Project> {
             task.bundleFile.set(bundleTask.flatMap { it.bundleFile })
 
             // Wire project metadata
-            task.projectVersion.set(project.provider { project.version.toString() })
+            task.publicationVersion.set(extension.mavenPublication.map { it.version })
             task.projectName.set(project.provider { project.name })
             task.groupId.set(extension.mavenPublication.map { it.groupId })
             task.artifactId.set(extension.mavenPublication.map { it.artifactId })
