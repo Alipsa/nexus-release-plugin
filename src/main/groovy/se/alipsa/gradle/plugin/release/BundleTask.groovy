@@ -170,10 +170,6 @@ abstract class BundleTask extends DefaultTask {
     void generateChecksum(File file, String algo) {
         String extension = algo.toLowerCase().replace('-', '')
         def checksumFile = new File("${file.absolutePath}.${extension}")
-        if (checksumFile.exists()) {
-            logger.debug("${checksumFile.name} already exists")
-            return
-        }
         def digest = MessageDigest.getInstance(algo)
         file.withInputStream { is ->
             new DigestOutputStream(OutputStream.nullOutputStream(), digest)
@@ -181,6 +177,6 @@ abstract class BundleTask extends DefaultTask {
         }
         def hash = digest.digest().encodeHex().toString()
         checksumFile.text = hash
-        logger.debug("Generated ${algo} for ${file.name} → ${checksumFile.name}")
+        logger.debug("Generated ${algo} for ${file.name} -> ${checksumFile.name}")
     }
 }
