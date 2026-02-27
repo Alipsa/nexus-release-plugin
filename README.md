@@ -21,7 +21,7 @@ plugins {
   // your other plugins...
    id 'signing'
    id 'maven-publish'
-   id("se.alipsa.nexus-release-plugin") version '2.0.0'
+   id("se.alipsa.nexus-release-plugin") version '2.1.0'
 }
 
 publishing {

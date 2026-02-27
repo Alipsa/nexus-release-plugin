@@ -2,6 +2,7 @@ package se.alipsa.gradle.plugin.release
 
 import groovy.json.JsonSlurper
 import groovy.transform.CompileStatic
+import org.gradle.api.GradleException
 import org.gradle.api.logging.Logger
 
 /**
@@ -47,9 +48,13 @@ class CentralPortalClient extends WsClient {
     String upload(File file) {
         String urlString = "${publishUrl}/publisher/upload?publishingType=AUTOMATIC"
         log.debug("Post multipart to $urlString")
-        Map<String, Object> result = postMultipart(urlString, file, userName, password)
-        log.debug("Upload result: $result")
-        return result.get(BODY)
+        try {
+            Map<String, Object> result = postMultipart(urlString, file, userName, password)
+            log.debug("Upload result: $result")
+            return (result.get(BODY) as String)?.trim()
+        } catch (WsException e) {
+            throw createUploadException(e)
+        }
     }
 
     /**
@@ -71,16 +76,37 @@ class CentralPortalClient extends WsClient {
      * @param deploymentId The ID of the deployment.
      * @return The status of the deployment or null if not found.
      */
-    String getStatus(String deploymentId) {
+    Map<String, Object> getDeploymentStatus(String deploymentId) {
         String endPoint = "$publishUrl/publisher/status?id=${deploymentId}"
         Map<String, Object> result = post(endPoint, null, userName, password)
         def body
         try {
             body = new JsonSlurper().parseText(result.get(BODY) as String) as Map
         } catch (Exception e) {
-            log.error("Failed to parse JSON response for deployment ID ${deploymentId}: ${e.message}")
-            return null
+            String responseBody = result.get(BODY) as String
+            throw new GradleException("Failed to parse deployment status response for deployment ID ${deploymentId}: ${e.message}. Body: ${responseBody}")
         }
-        body?.deploymentState ?: null
+        return body as Map<String, Object>
+    }
+
+    String getDeploymentState(Map<String, Object> status) {
+        return status?.get('deploymentState') as String
+    }
+
+    private GradleException createUploadException(WsException e) {
+        String body = e.body?.trim()
+        switch (e.statusCode) {
+            case 401:
+                return new GradleException("Authentication failed - check sonatypeUsername/sonatypePassword")
+            case 403:
+                return new GradleException("Forbidden - is the namespace verified in your Central Portal account?")
+            case 422:
+                return new GradleException("Rejected by Central Portal - see body for details: ${body}")
+            default:
+                if (e.statusCode >= 500) {
+                    return new GradleException("Central Portal returned ${e.statusCode} - try again later")
+                }
+                return new GradleException("Upload failed with HTTP ${e.statusCode}: ${body}", e)
+        }
     }
 }

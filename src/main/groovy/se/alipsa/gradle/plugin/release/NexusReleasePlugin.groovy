@@ -53,6 +53,8 @@ class NexusReleasePlugin implements Plugin<Project> {
             // Wire project metadata
             task.projectVersion.set(project.provider { project.version.toString() })
             task.projectName.set(project.provider { project.name })
+            task.groupId.set(extension.mavenPublication.map { it.groupId })
+            task.artifactId.set(extension.mavenPublication.map { it.artifactId })
 
             // Wire credentials from extension
             task.nexusUrl.set(extension.nexusUrl)

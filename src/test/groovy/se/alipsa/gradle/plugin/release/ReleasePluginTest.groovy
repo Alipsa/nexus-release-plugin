@@ -106,4 +106,55 @@ class ReleasePluginTest {
     AntBuilder ant = new AntBuilder()
     ant.delete dir: testProjectDir.parentFile
   }
+
+  @Test
+  void releaseFailsBeforeUploadOnFilenameMismatch() throws IOException {
+    String buildScript = TestFixtures.createBuildScript().replace(
+        "version = '1.0.0'",
+        """version = '1.0.0'
+base {
+  archivesName = 'sieparser'
+}"""
+    )
+    File testProjectDir = TestFixtures.createTestProject(buildScript)
+
+    BuildResult result = GradleRunner.create()
+        .withProjectDir(testProjectDir)
+        .withArguments("release")
+        .withPluginClasspath()
+        .forwardOutput()
+        .buildAndFail()
+
+    assertTrue(result.output.contains("Bundle validation failed."))
+    assertTrue(result.output.contains("Filename mismatch"))
+    assertTrue(result.output.contains("sieparser-1.0.0.jar"))
+
+    AntBuilder ant = new AntBuilder()
+    ant.delete dir: testProjectDir.parentFile
+  }
+
+  @Test
+  void releaseFailsBeforeUploadOnMissingCredentials() throws IOException {
+    String buildScript = TestFixtures.buildScript(
+        TestFixtures.generateTestPrivateKey(),
+        'http://localhost:1/api/v1',
+        '',
+        ''
+    )
+    File testProjectDir = TestFixtures.createTestProject(buildScript)
+
+    BuildResult result = GradleRunner.create()
+        .withProjectDir(testProjectDir)
+        .withArguments("release")
+        .withPluginClasspath()
+        .forwardOutput()
+        .buildAndFail()
+
+    assertTrue(result.output.contains("Bundle validation failed."))
+    assertTrue(result.output.contains("Credentials not configured. Add the following to ~/.gradle/gradle.properties"))
+    assertFalse(result.output.contains("Post multipart to"))
+
+    AntBuilder ant = new AntBuilder()
+    ant.delete dir: testProjectDir.parentFile
+  }
 }

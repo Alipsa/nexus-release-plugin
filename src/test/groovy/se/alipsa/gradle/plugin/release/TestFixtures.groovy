@@ -22,7 +22,7 @@ import java.security.Security
 class TestFixtures {
 
   static String createBuildScript(String nexusReleaseUrl, String identity = "test@example.com", char[] passphrase = []) {
-    buildScript(generateTestPrivateKey(identity, passphrase), nexusReleaseUrl, identity, new String(passphrase))
+    buildScript(generateTestPrivateKey(identity, passphrase), nexusReleaseUrl, "sonaTypeUserName", "sonaTypePassword")
   }
 
   static String createBuildScript() {
@@ -66,6 +66,27 @@ class TestFixtures {
             from components.java
             artifact(javadocJar)
             artifact(sourcesJar)
+            pom {
+              name = 'Test Project'
+              description = 'Fixture publication used for plugin tests'
+              url = 'https://example.com/test-project'
+              licenses {
+                license {
+                  name = 'MIT'
+                  url = 'https://opensource.org/licenses/MIT'
+                }
+              }
+              developers {
+                developer {
+                  id = 'tester'
+                  name = 'Test User'
+                }
+              }
+              scm {
+                url = 'https://example.com/test-project'
+                connection = 'scm:git:https://example.com/test-project.git'
+              }
+            }
           }
         }
       }
