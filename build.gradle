@@ -8,7 +8,7 @@ plugins {
 }
 
 group = 'se.alipsa'
-version = '2.1.1'
+version = '2.1.2-SNAPSHOT'
 description = 'Automates the release process in Central Portal after signing has completed'
 
 gradlePlugin {
@@ -96,6 +96,8 @@ if (project.properties['signing.keyId'] == null) {
 
 test {
   useJUnitPlatform()
+  // Parallelize at JVM-fork level to keep TestKit tests isolated per process.
+  maxParallelForks = Math.max(1, (Runtime.runtime.availableProcessors().intdiv(2)))
 }
 
 signing {

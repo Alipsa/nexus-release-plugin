@@ -1,6 +1,9 @@
 # Release history
 
-## Ver 2.1.1, in progress
+## Ver 2.1.2, in progress
+- Enable configuration cache and parallel execution.
+
+## Ver 2.1.1, 2026-02-27
 - com.github.ben-manes.versions:com.github.ben-manes.versions.gradle.plugin [0.52.0 -> 0.53.0]
 - com.squareup.okhttp3:mockwebserver [5.1.0 -> 5.3.2]
 - org.apache.groovy:groovy [5.0.0 -> 4.0.30]
