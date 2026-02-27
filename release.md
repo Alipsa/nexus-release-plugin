@@ -1,5 +1,14 @@
 # Release history
 
+## Ver 2.1.1, in progress
+- com.github.ben-manes.versions:com.github.ben-manes.versions.gradle.plugin [0.52.0 -> 0.53.0]
+- com.squareup.okhttp3:mockwebserver [5.1.0 -> 5.3.2]
+- org.apache.groovy:groovy [5.0.0 -> 5.0.4]
+- org.junit.jupiter:junit-jupiter [5.13.4 -> 6.0.3]
+- org.junit.platform:junit-platform-launcher [1.13.4 -> 6.0.3]
+- org.testcontainers:junit-jupiter [1.21.3 -> 1.21.4]
+- org.testcontainers:testcontainers [1.21.3 -> 2.0.3]
+- 
 ## Ver 2.1.0, 2026-02-27
 - Added upfront bundle validation before upload:
   - credentials must be configured
