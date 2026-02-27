@@ -157,4 +157,28 @@ base {
     AntBuilder ant = new AntBuilder()
     ant.delete dir: testProjectDir.parentFile
   }
+
+  @Test
+  void releaseUsesPublicationVersionWhenProjectVersionDiffers() throws IOException {
+    String buildScript = TestFixtures.createBuildScript()
+        .replace("version = '1.0.0'", "version = '1.0.0-SNAPSHOT'")
+        .replace("artifact(sourcesJar)", "artifact(sourcesJar)\n            version = '1.0.0'")
+        .replace("userName = 'sonaTypeUserName'", "userName = ''")
+        .replace("password = 'sonaTypePassword'", "password = ''")
+
+    File testProjectDir = TestFixtures.createTestProject(buildScript)
+
+    BuildResult result = GradleRunner.create()
+        .withProjectDir(testProjectDir)
+        .withArguments("release")
+        .withPluginClasspath()
+        .forwardOutput()
+        .buildAndFail()
+
+    assertTrue(result.output.contains("Credentials not configured. Add the following to ~/.gradle/gradle.properties"))
+    assertFalse(result.output.contains("A snapshot cannot be released"))
+
+    AntBuilder ant = new AntBuilder()
+    ant.delete dir: testProjectDir.parentFile
+  }
 }

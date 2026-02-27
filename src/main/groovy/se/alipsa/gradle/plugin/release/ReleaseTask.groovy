@@ -25,7 +25,7 @@ abstract class ReleaseTask extends DefaultTask {
     abstract RegularFileProperty getBundleFile()
 
     @Input
-    abstract Property<String> getProjectVersion()
+    abstract Property<String> getPublicationVersion()
 
     @Input
     abstract Property<String> getProjectName()
@@ -54,7 +54,7 @@ abstract class ReleaseTask extends DefaultTask {
 
     @TaskAction
     void release() {
-        String version = projectVersion.get()
+        String version = publicationVersion.get()
         if (version.endsWith("-SNAPSHOT")) {
             logger.quiet("Alipsa Nexus Release Plugin: A snapshot cannot be released, publish is enough (or maybe you forgot to change the version?)")
             return
