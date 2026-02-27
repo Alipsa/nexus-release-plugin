@@ -1,6 +1,8 @@
 package se.alipsa.gradle.plugin.release
 
 import groovy.transform.CompileStatic
+import org.gradle.api.logging.Logger
+import org.gradle.api.logging.Logging
 
 @CompileStatic
 abstract class WsClient {
@@ -8,62 +10,50 @@ abstract class WsClient {
   static final String BODY = 'body'
   static final String RESPONSE_CODE = 'responseCode'
   static final String HEADERS = 'headers'
+  private static final Logger LOGGER = Logging.getLogger(WsClient)
 
   Map<String, Object> get(String urlString, String username, String password) throws IOException {
-    StringBuilder writer = new StringBuilder()
     URL url = new URL(urlString)
     HttpURLConnection conn = (HttpURLConnection) url.openConnection()
-    conn.setRequestMethod("GET")
-    conn.setRequestProperty("Accept", APPLICATION_JSON)
-    conn.setRequestProperty("Authorization", auth(username, password))
-    conn.connect()
-    int responseCode = conn.getResponseCode()
-    var responseHeaders = conn.getHeaderFields()
-    BufferedReader br = new BufferedReader(new InputStreamReader(conn.getInputStream()))
-    String line
-    while ((line = br.readLine()) != null) {
-      writer.append(line).append('\n')
+    try {
+      conn.setRequestMethod("GET")
+      conn.setRequestProperty("Accept", APPLICATION_JSON)
+      conn.setRequestProperty("Authorization", auth(username, password))
+      conn.connect()
+      int responseCode = conn.getResponseCode()
+      var responseHeaders = conn.getHeaderFields()
+      ensureSuccess(responseCode, '', conn)
+      String body = readBody(conn.getInputStream())
+      return [(BODY): body, (RESPONSE_CODE): responseCode, (HEADERS): responseHeaders]
+    } finally {
+      conn.disconnect()
     }
-    conn.disconnect()
-    return [(BODY): writer.toString(), (RESPONSE_CODE): responseCode, (HEADERS): responseHeaders]
   }
 
   Map<String, Object> post(String urlString, byte[] payload, String username, String password, String contentType=APPLICATION_JSON) throws IOException {
-    StringBuilder writer = new StringBuilder()
     URL url = new URL(urlString)
     HttpURLConnection conn = (HttpURLConnection) url.openConnection()
-    conn.setRequestMethod('POST')
-    conn.setRequestProperty('Content-Type', contentType)
-    conn.setRequestProperty("Accept", APPLICATION_JSON)
-    conn.setRequestProperty("Authorization", auth(username, password))
-    conn.setDoOutput(true)
-    conn.connect()
-    if (payload) {
-      OutputStream os = conn.getOutputStream()
-      os.write(payload)
-      os.flush()
-      os.close()
-    }
-
-    Integer responseCode = conn.getResponseCode()
-    var responseHeaders = conn.getHeaderFields()
-    InputStream is = null
     try {
-      is = conn.getInputStream()
-    } catch (IOException ignored) {
-      // no content
-    }
-    if (is != null) {
-      BufferedReader br = new BufferedReader(new InputStreamReader(is))
-
-      String line
-      while ((line = br.readLine()) != null) {
-        writer.append(line).append('\n')
+      conn.setRequestMethod('POST')
+      conn.setRequestProperty('Content-Type', contentType)
+      conn.setRequestProperty("Accept", APPLICATION_JSON)
+      conn.setRequestProperty("Authorization", auth(username, password))
+      conn.setDoOutput(true)
+      conn.connect()
+      if (payload) {
+        OutputStream os = conn.getOutputStream()
+        os.write(payload)
+        os.flush()
+        os.close()
       }
-      is.close()
+      int responseCode = conn.getResponseCode()
+      var responseHeaders = conn.getHeaderFields()
+      ensureSuccess(responseCode, '', conn)
+      String body = readBody(conn.getInputStream())
+      return [(BODY): body, (RESPONSE_CODE): responseCode, (HEADERS): responseHeaders]
+    } finally {
+      conn.disconnect()
     }
-    conn.disconnect()
-    return [(BODY): writer.toString(), (RESPONSE_CODE): responseCode, (HEADERS): responseHeaders]
   }
 
   Map<String, Object> postMultipart(String urlString, File file, String fieldName = "bundle", String username, String password) throws IOException {
@@ -78,26 +68,56 @@ abstract class WsClient {
     conn.setRequestProperty("Accept", "application/json")
     conn.setRequestProperty("Authorization", auth(username, password))
 
-    conn.connect()
+    try {
+      conn.connect()
 
-    def out = new DataOutputStream(conn.outputStream)
+      def out = new DataOutputStream(conn.outputStream)
+      out.writeBytes("${twoHyphens}${boundary}${lineEnd}")
+      out.writeBytes("Content-Disposition: form-data; name=\"${fieldName}\"; filename=\"${file.name}\"${lineEnd}")
+      out.writeBytes("Content-Type: application/zip${lineEnd}")
+      out.writeBytes(lineEnd)
+      out.write(file.bytes)
+      out.writeBytes(lineEnd)
+      out.writeBytes("${twoHyphens}${boundary}--${lineEnd}")
+      out.flush()
+      out.close()
 
-    out.writeBytes("${twoHyphens}${boundary}${lineEnd}")
-    out.writeBytes("Content-Disposition: form-data; name=\"${fieldName}\"; filename=\"${file.name}\"${lineEnd}")
-    out.writeBytes("Content-Type: application/zip${lineEnd}")
-    out.writeBytes(lineEnd)
+      int responseCode = conn.responseCode
+      ensureSuccess(responseCode, '', conn)
+      String body = readBody(conn.inputStream)
+      return [(RESPONSE_CODE): responseCode, (BODY): body, (HEADERS): conn.headerFields]
+    } finally {
+      conn.disconnect()
+    }
+  }
 
-    out.write(file.bytes)
-    out.writeBytes(lineEnd)
+  private static void ensureSuccess(int responseCode, String body, HttpURLConnection conn) {
+    if (responseCode >= 200 && responseCode < 300) {
+      return
+    }
+    String errorBody = readBody(conn.getErrorStream())
+    if (!errorBody) {
+      errorBody = body
+    }
+    LOGGER.lifecycle("HTTP call failed with status ${responseCode}")
+    if (errorBody) {
+      LOGGER.lifecycle(errorBody)
+    }
+    throw new WsException(responseCode, errorBody)
+  }
 
-    out.writeBytes("${twoHyphens}${boundary}--${lineEnd}")
-    out.flush()
-    out.close()
-
-    def responseCode = conn.responseCode
-    def responseText = conn.inputStream.text
-
-    return [(RESPONSE_CODE): responseCode, (BODY): responseText, (HEADERS): conn.headerFields]
+  private static String readBody(InputStream stream) {
+    if (stream == null) {
+      return ''
+    }
+    try (InputStream is = stream; BufferedReader br = new BufferedReader(new InputStreamReader(is))) {
+      StringBuilder writer = new StringBuilder()
+      String line
+      while ((line = br.readLine()) != null) {
+        writer.append(line).append('\n')
+      }
+      return writer.toString()
+    }
   }
 
   abstract String auth(String username, String password)
