@@ -8,7 +8,7 @@ plugins {
 }
 
 group = 'se.alipsa'
-version = '2.1.1-SNAPSHOT'
+version = '2.1.1'
 description = 'Automates the release process in Central Portal after signing has completed'
 
 gradlePlugin {
