@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Build and test
+        run: ./gradlew build
+
+  compatibility-test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        gradle-version: ['8.13', '9.4.0']
+    name: Compatibility tests (Gradle ${{ matrix.gradle-version }})
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Compatibility tests with Gradle ${{ matrix.gradle-version }}
+        run: ./gradlew test --tests "se.alipsa.gradle.plugin.release.GradleCompatibilityMatrixTest" -PtestGradleVersion=${{ matrix.gradle-version }}

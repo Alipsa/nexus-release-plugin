@@ -3,12 +3,13 @@ plugins {
   id 'java-gradle-plugin'
   id 'signing'
   id 'maven-publish'
-  id "com.gradle.plugin-publish" version "2.0.0"
+  id "com.gradle.plugin-publish" version "2.1.0"
   id "com.github.ben-manes.versions" version "0.53.0"
+  id 'se.alipsa.nexus-release-plugin' version '2.1.1'
 }
 
-group = 'se.alipsa'
-version = '2.1.2-SNAPSHOT'
+group = project.property('group')
+version = project.property('version')
 description = 'Automates the release process in Central Portal after signing has completed'
 
 gradlePlugin {
@@ -16,11 +17,16 @@ gradlePlugin {
   vcsUrl.set("https://github.com/Alipsa/nexus-release-plugin")
   plugins {
     simplePlugin {
-      id = "${project.group}.${project.name}"
+      id = 'se.alipsa.nexus-release-plugin'
       implementationClass = 'se.alipsa.gradle.plugin.release.NexusReleasePlugin'
       displayName = "Gradle Nexus Release Plugin"
       description = project.description
       tags.set(["publish", "release", "central", "portal", "sonatype"])
+      compatibility {
+        features {
+          configurationCache = true
+        }
+      }
     }
   }
 }
@@ -56,15 +62,18 @@ java {
 
 publishing {
   publications {
-    pluginMaven(MavenPublication) {
+    mavenCentral(MavenPublication) {
+      groupId = 'se.alipsa.nexus-release-plugin'
+      artifactId = 'se.alipsa.nexus-release-plugin.gradle.plugin'
+      from components.java
       pom {
         name = 'Nexus Release Plugin'
         description = "${project.description}"
-        url = "https://github.com/perNyfelt/nexus-release-plugin"
+        url = "https://github.com/Alipsa/nexus-release-plugin"
         licenses {
           license {
             name = 'MIT License'
-            url = 'https://raw.githubusercontent.com/perNyfelt/nexus-release-plugin/master/LICENSE'
+            url = 'https://raw.githubusercontent.com/Alipsa/nexus-release-plugin/main/LICENSE'
           }
         }
         developers {
@@ -74,9 +83,9 @@ publishing {
           }
         }
         scm {
-          url = 'https://github.com/perNyfelt/nexus-release-plugin/tree/master'
-          connection = 'scm:git:https://github.com/perNyfelt/nexus-release-plugin.git'
-          developerConnection = 'scm:git:https://github.com/perNyfelt/nexus-release-plugin.git'
+          url = 'https://github.com/Alipsa/nexus-release-plugin'
+          connection = 'scm:git:https://github.com/Alipsa/nexus-release-plugin.git'
+          developerConnection = 'scm:git:https://github.com/Alipsa/nexus-release-plugin.git'
         }
       }
     }
@@ -98,15 +107,23 @@ test {
   useJUnitPlatform()
   // Parallelize at JVM-fork level to keep TestKit tests isolated per process.
   maxParallelForks = Math.max(1, (Runtime.runtime.availableProcessors().intdiv(2)))
+  // Pass system properties from command line to tests
+  systemProperty 'testGradleVersion', findProperty('testGradleVersion') ?: ''
 }
 
 signing {
   if (project.properties['signing.keyId'] != null) {
     project.logger.lifecycle("Signing artifacts...")
-    sign publishing.publications.pluginMaven
+    sign publishing.publications
   } else {
     project.logger.lifecycle("signing.keyId is not defined, skipping signing of artifacts...")
   }
+}
+
+nexusReleasePlugin {
+  userName = project.ext.properties.sonatypeUsername
+  password = project.ext.properties.sonatypePassword
+  mavenPublication = publishing.publications.mavenCentral
 }
 
 def isNonStable = { String version ->

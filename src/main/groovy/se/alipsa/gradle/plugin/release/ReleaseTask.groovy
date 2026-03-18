@@ -12,12 +12,14 @@ import org.gradle.api.tasks.PathSensitive
 import org.gradle.api.tasks.PathSensitivity
 import org.gradle.api.tasks.TaskAction
 import org.gradle.api.tasks.Optional
+import org.gradle.work.DisableCachingByDefault
 
 /**
  * Task that uploads a release bundle to Maven Central and monitors its status.
  * This task is configuration cache compatible.
  */
 @CompileStatic
+@DisableCachingByDefault(because = "Uploads to Maven Central and must always execute")
 abstract class ReleaseTask extends DefaultTask {
 
     @InputFile

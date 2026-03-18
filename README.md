@@ -1,4 +1,9 @@
 # nexus-release-plugin
+
+[![CI](https://github.com/Alipsa/nexus-release-plugin/actions/workflows/ci.yml/badge.svg)](https://github.com/Alipsa/nexus-release-plugin/actions/workflows/ci.yml)
+[![Java](https://img.shields.io/badge/Java-17+-blue)](https://docs.oracle.com/en/java/javase/17/)
+[![Javadoc](https://javadoc.io/badge2/se.alipsa/gradle-nexus-release-plugin/javadoc.svg)](https://javadoc.io/doc/se.alipsa/gradle-nexus-release-plugin)
+
 Automates the release process to Sonatype Central.
 
 Assumptions are:
@@ -75,3 +80,14 @@ nexusReleasePlugin {
    mavenPublication = publishing.publications.maven
 }
 ```
+
+## Building the Plugin
+
+```bash
+./gradlew build                  # Build and test
+./gradlew publishToMavenLocal    # Publish to local Maven repo
+```
+
+## License
+
+MIT License - see [LICENSE](LICENSE) for details.

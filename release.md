@@ -1,7 +1,10 @@
 # Release history
 
-## Ver 2.1.2, in progress
+## Ver 2.1.2, 2026-03-18
 - Enable configuration cache and parallel execution.
+- Declare the plugin to support CC
+- Add github ci/cd workflow for testing against the compatibility matrix (latest 8.x and 9.x versions) on every commit and PR.
+- also publish the plugin to Maven Central on every release.
 
 ## Ver 2.1.1, 2026-02-27
 - com.github.ben-manes.versions:com.github.ben-manes.versions.gradle.plugin [0.52.0 -> 0.53.0]
