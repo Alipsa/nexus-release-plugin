@@ -50,6 +50,10 @@ dependencies {
   testImplementation 'org.testcontainers:testcontainers-junit-jupiter:2.0.3'
 }
 
+base {
+  archivesName = 'se.alipsa.nexus-release-plugin.gradle.plugin'
+}
+
 java {
   toolchain {
     languageVersion = JavaLanguageVersion.of(17)
