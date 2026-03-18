@@ -95,21 +95,21 @@ publishing {
   }
 }
 
-// Disable the default pluginMaven publication tasks to avoid conflicts with mavenCentral
+// Disable the default pluginMaven and marker publication tasks to avoid conflicts with mavenCentral
 afterEvaluate {
   tasks.withType(org.gradle.api.publish.maven.tasks.PublishToMavenLocal).configureEach { task ->
-    if (task.name.contains('PluginMaven')) {
+    if (task.name.contains('PluginMaven') || task.name.contains('PluginMarkerMaven')) {
       task.enabled = false
     }
   }
   tasks.withType(org.gradle.api.publish.maven.tasks.PublishToMavenRepository).configureEach { task ->
-    if (task.name.contains('PluginMaven')) {
+    if (task.name.contains('PluginMaven') || task.name.contains('PluginMarkerMaven')) {
       task.enabled = false
     }
   }
-  // Also disable the signing task for pluginMaven
+  // Also disable the signing tasks for pluginMaven and marker
   tasks.withType(org.gradle.plugins.signing.Sign).configureEach { task ->
-    if (task.name.contains('PluginMaven')) {
+    if (task.name.contains('PluginMaven') || task.name.contains('PluginMarkerMaven')) {
       task.enabled = false
     }
   }
