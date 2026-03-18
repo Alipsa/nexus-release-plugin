@@ -111,14 +111,6 @@ afterEvaluate {
   }
 }
 
-if (project.properties['signing.keyId'] == null) {
-  afterEvaluate {
-    tasks.named('signMavenCentralPublication').configure {
-      enabled = false
-    }
-  }
-}
-
 test {
   useJUnitPlatform()
   // Parallelize at JVM-fork level to keep TestKit tests isolated per process.
