@@ -14,6 +14,7 @@ import org.gradle.api.tasks.OutputFile
 import org.gradle.api.tasks.PathSensitive
 import org.gradle.api.tasks.PathSensitivity
 import org.gradle.api.tasks.TaskAction
+import org.gradle.work.DisableCachingByDefault
 
 import java.security.DigestOutputStream
 import java.security.MessageDigest
@@ -26,6 +27,7 @@ import java.util.zip.ZipOutputStream
  * This task is configuration cache compatible.
  */
 @CompileStatic
+@DisableCachingByDefault(because = "Bundle creation depends on external publication state")
 abstract class BundleTask extends DefaultTask {
 
     static final List<String> CHECKSUM_ALGOS = ['MD5', 'SHA-1']
