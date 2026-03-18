@@ -2,6 +2,8 @@
 
 [![CI](https://github.com/Alipsa/nexus-release-plugin/actions/workflows/ci.yml/badge.svg)](https://github.com/Alipsa/nexus-release-plugin/actions/workflows/ci.yml)
 [![Java](https://img.shields.io/badge/Java-17+-blue)](https://docs.oracle.com/en/java/javase/17/)
+[![Groovy](https://img.shields.io/badge/Groovy-4.0.30-blue)](https://groovy-lang.org/)
+[![Javadoc](https://javadoc.io/badge2/se.alipsa.nexus-release-plugin/se.alipsa.nexus-release-plugin.gradle.plugin/javadoc.svg)](https://javadoc.io/doc/se.alipsa.nexus-release-plugin/se.alipsa.nexus-release-plugin.gradle.plugin)
 
 Automates the release process to Sonatype Central.
 
