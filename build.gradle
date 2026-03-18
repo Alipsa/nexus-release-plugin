@@ -94,7 +94,7 @@ publishing {
 
 if (project.properties['signing.keyId'] == null) {
   afterEvaluate {
-    tasks.named('signMavenCentralPublication').configure {
+    tasks.named('signPluginMavenPublication').configure {
       enabled = false
     }
     tasks.named('signSimplePluginPluginMarkerMavenPublication').configure {
