@@ -69,18 +69,11 @@ groovydoc {
   link('java', 'https://docs.oracle.com/en/java/javase/17/docs/api/')
 }
 
-// Create a Javadoc jar that contains Groovydoc (for Maven Central compatibility)
-tasks.register('groovydocJar', Jar) {
-  archiveClassifier = 'javadoc'
-  from groovydoc
-  dependsOn groovydoc
-}
-
 // Replace the empty javadoc jar with groovydoc content
-tasks.withType(Jar).configureEach { jarTask ->
-  if (jarTask.name == 'javadocJar') {
-    jarTask.from groovydoc
-    jarTask.dependsOn groovydoc
+afterEvaluate {
+  tasks.named('javadocJar') {
+    from groovydoc
+    dependsOn groovydoc
   }
 }
 
@@ -91,7 +84,6 @@ publishing {
       groupId = 'se.alipsa.nexus-release-plugin'
       artifactId = 'se.alipsa.nexus-release-plugin.gradle.plugin'
       from components.java
-      artifact tasks.named('groovydocJar')
       pom {
         name = 'Nexus Release Plugin'
         description = "${project.description}"
