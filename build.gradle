@@ -1,6 +1,5 @@
 plugins {
   id 'groovy'
-  id 'java-gradle-plugin'
   id 'signing'
   id 'maven-publish'
   id "com.gradle.plugin-publish" version "2.1.0"
@@ -92,12 +91,29 @@ publishing {
   }
 }
 
+// Disable the default pluginMaven publication tasks to avoid conflicts with mavenCentral
+afterEvaluate {
+  tasks.withType(org.gradle.api.publish.maven.tasks.PublishToMavenLocal).configureEach { task ->
+    if (task.name.contains('PluginMaven')) {
+      task.enabled = false
+    }
+  }
+  tasks.withType(org.gradle.api.publish.maven.tasks.PublishToMavenRepository).configureEach { task ->
+    if (task.name.contains('PluginMaven')) {
+      task.enabled = false
+    }
+  }
+  // Also disable the signing task for pluginMaven
+  tasks.withType(org.gradle.plugins.signing.Sign).configureEach { task ->
+    if (task.name.contains('PluginMaven')) {
+      task.enabled = false
+    }
+  }
+}
+
 if (project.properties['signing.keyId'] == null) {
   afterEvaluate {
-    tasks.named('signPluginMavenPublication').configure {
-      enabled = false
-    }
-    tasks.named('signSimplePluginPluginMarkerMavenPublication').configure {
+    tasks.named('signMavenCentralPublication').configure {
       enabled = false
     }
   }
@@ -114,7 +130,7 @@ test {
 signing {
   if (project.properties['signing.keyId'] != null) {
     project.logger.lifecycle("Signing artifacts...")
-    sign publishing.publications
+    sign publishing.publications.mavenCentral
   } else {
     project.logger.lifecycle("signing.keyId is not defined, skipping signing of artifacts...")
   }
