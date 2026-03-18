@@ -1,5 +1,8 @@
 # Release history
 
+## Ver 2.1.3, In progress
+- fixed groovy doc generation
+
 ## Ver 2.1.2, 2026-03-18
 - Enable configuration cache and parallel execution.
 - Declare the plugin to support CC
