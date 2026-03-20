@@ -157,4 +157,84 @@ class TestFixtures {
     }
     testProjectDir
   }
+
+  static File createMultiModuleProject(String metadataBaseUrl) {
+    File tempDir = File.createTempDir('nexus-release-plugin')
+    File testProjectDir = new File(tempDir, 'multi-module-project')
+    println("Creating multi-module project in $testProjectDir")
+    testProjectDir.mkdirs()
+
+    writeFile(new File(testProjectDir, 'settings.gradle'), """
+      rootProject.name = 'multi-module-project'
+      include 'lib-one', 'lib-two'
+    """.stripIndent())
+
+    writeFile(new File(testProjectDir, 'build.gradle'), """
+      plugins {
+        id 'groovy'
+        id 'se.alipsa.nexus-release-plugin'
+      }
+
+      group = 'com.example'
+      version = '1.0.0'
+
+      repositories { mavenCentral() }
+      dependencies { implementation localGroovy() }
+
+      publishing {
+        publications {
+          maven(MavenPublication) {
+            from components.java
+          }
+        }
+      }
+
+      nexusReleasePlugin {
+        metadataBaseUrl = '${metadataBaseUrl}'
+        mavenPublication = publishing.publications.maven
+      }
+
+      subprojects {
+        apply plugin: 'groovy'
+        apply plugin: 'se.alipsa.nexus-release-plugin'
+
+        group = 'com.example'
+        version = '1.0.0'
+
+        repositories { mavenCentral() }
+        dependencies { implementation localGroovy() }
+
+        publishing {
+          publications {
+            maven(MavenPublication) {
+              from components.java
+            }
+          }
+        }
+
+        nexusReleasePlugin {
+          metadataBaseUrl = '${metadataBaseUrl}'
+          mavenPublication = publishing.publications.maven
+        }
+      }
+    """.stripIndent())
+
+    createGroovySource(testProjectDir, 'RootExample.groovy', "class RootExample { }")
+    createGroovySource(new File(testProjectDir, 'lib-one'), 'LibOneExample.groovy', "class LibOneExample { }")
+    createGroovySource(new File(testProjectDir, 'lib-two'), 'LibTwoExample.groovy', "class LibTwoExample { }")
+    testProjectDir
+  }
+
+  private static void createGroovySource(File projectDir, String fileName, String content) {
+    File srcDir = new File(projectDir, 'src/main/groovy/example')
+    srcDir.mkdirs()
+    writeFile(new File(srcDir, fileName), content)
+  }
+
+  private static void writeFile(File file, String content) {
+    file.parentFile?.mkdirs()
+    try (PrintWriter writer = new PrintWriter(new FileWriter(file))) {
+      writer.println(content.stripIndent().trim())
+    }
+  }
 }

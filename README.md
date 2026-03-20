@@ -70,14 +70,29 @@ nexusReleasePlugin {
 }
 ```
 
+The plugin adds these tasks:
+
+- `bundle`: creates the Maven Central bundle from the configured publication.
+- `release`: validates and uploads the bundle to Central Portal.
+- `latestMavenVersions`: lists the latest published version for the current project, and when run on the root project also for published subprojects that use this plugin.
+
 If you want to publish to another url that behaves just like the Central Publishing API, you 
 can set the property `nexusUrl` in the nexusReleasePlugin e.g:
 
 ```groovy
 nexusReleasePlugin {
-   nexusUrl = "https://some.host/api/v1"
+   nexusUrl = "https://central.sonatype.com/api/v1"
    userName = sonatypeUsername
    password = sonatypePassword
+   mavenPublication = publishing.publications.maven
+}
+```
+
+If you need `latestMavenVersions` to query another Maven-compatible repository, set `metadataBaseUrl`:
+
+```groovy
+nexusReleasePlugin {
+   metadataBaseUrl = "https://repo1.maven.org/maven2"
    mavenPublication = publishing.publications.maven
 }
 ```

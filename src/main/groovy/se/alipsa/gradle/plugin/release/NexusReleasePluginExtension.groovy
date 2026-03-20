@@ -12,6 +12,7 @@ import javax.inject.Inject
 class NexusReleasePluginExtension {
 
     final Property<String> nexusUrl
+    final Property<String> metadataBaseUrl
     final Property<String> userName
     final Property<String> password
     final Property<MavenPublication> mavenPublication
@@ -19,6 +20,7 @@ class NexusReleasePluginExtension {
     // References to tasks with proper types
     TaskProvider<BundleTask> bundleTask
     TaskProvider<ReleaseTask> releaseTask
+    TaskProvider<LatestMavenVersionsTask> latestMavenVersionsTask
 
     @Inject
     NexusReleasePluginExtension(ObjectFactory objects) {
@@ -26,6 +28,7 @@ class NexusReleasePluginExtension {
         password = objects.property(String)
         mavenPublication = objects.property(MavenPublication)
         nexusUrl = objects.property(String).convention(CentralPortalClient.CENTRAL_PORTAL_URL)
+        metadataBaseUrl = objects.property(String).convention('https://repo1.maven.org/maven2')
     }
 
     void setNexusUrl(String url) {
@@ -34,6 +37,10 @@ class NexusReleasePluginExtension {
 
     void setUserName(String user) {
         userName.set(user)
+    }
+
+    void setMetadataBaseUrl(String url) {
+        metadataBaseUrl.set(url)
     }
 
     void setPassword(String pass) {

@@ -3,6 +3,8 @@ package se.alipsa.gradle.plugin.release
 import groovy.transform.CompileStatic
 import org.gradle.api.Plugin
 import org.gradle.api.Project
+import org.gradle.api.publish.PublishingExtension
+import org.gradle.api.publish.maven.MavenPublication
 import org.gradle.api.tasks.TaskProvider
 
 /**
@@ -62,8 +64,66 @@ class NexusReleasePlugin implements Plugin<Project> {
             task.password.set(extension.password)
         }
 
+        TaskProvider<LatestMavenVersionsTask> latestMavenVersionsTask = project.tasks.register('latestMavenVersions', LatestMavenVersionsTask) { LatestMavenVersionsTask task ->
+            task.metadataBaseUrl.set(extension.metadataBaseUrl)
+            task.moduleCoordinates.set(project.provider {
+                collectPublishedModules(project)
+            })
+        }
+
         // Expose tasks via the extension for external access
         extension.bundleTask = bundleTask
         extension.releaseTask = releaseTask
+        extension.latestMavenVersionsTask = latestMavenVersionsTask
+    }
+
+    private static List<String> collectPublishedModules(Project currentProject) {
+        List<Project> candidates = currentProject == currentProject.rootProject
+            ? currentProject.rootProject.allprojects.toList()
+            : Collections.singletonList(currentProject)
+
+        List<String> modules = candidates.collect { Project candidate ->
+            moduleCoordinates(candidate)
+        }.findAll { String encoded ->
+            encoded != null
+        } as List<String>
+
+        modules.unique().sort()
+    }
+
+    private static String moduleCoordinates(Project candidate) {
+        MavenPublication publication = publicationFor(candidate)
+        if (publication == null) {
+            return null
+        }
+
+        String groupId = publication.groupId
+        String artifactId = publication.artifactId
+        if (!groupId || !artifactId || groupId == 'unspecified') {
+            return null
+        }
+
+        String displayName = candidate == candidate.rootProject ? candidate.name : candidate.path
+        "${displayName}\t${groupId}\t${artifactId}"
+    }
+
+    private static MavenPublication publicationFor(Project candidate) {
+        NexusReleasePluginExtension extension = candidate.extensions.findByType(NexusReleasePluginExtension)
+        if (extension != null && extension.mavenPublication.present) {
+            return extension.mavenPublication.get()
+        }
+
+        PublishingExtension publishing = candidate.extensions.findByType(PublishingExtension)
+        if (publishing == null) {
+            return null
+        }
+
+        Object named = publishing.publications.findByName('maven')
+        if (named instanceof MavenPublication) {
+            return (MavenPublication) named
+        }
+
+        Set<MavenPublication> publications = publishing.publications.withType(MavenPublication)
+        publications.isEmpty() ? null : publications.iterator().next()
     }
 }

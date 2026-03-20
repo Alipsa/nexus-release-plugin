@@ -1,9 +1,15 @@
 package se.alipsa.gradle.plugin.release
 
 import groovy.ant.AntBuilder
+import okhttp3.mockwebserver.Dispatcher
+import okhttp3.mockwebserver.MockResponse
+import okhttp3.mockwebserver.MockWebServer
+import okhttp3.mockwebserver.RecordedRequest
 import org.gradle.testkit.runner.GradleRunner
 import org.gradle.testkit.runner.BuildResult
 import org.gradle.testkit.runner.TaskOutcome
+import org.junit.jupiter.api.AfterAll
+import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
 
 import java.util.zip.ZipFile
@@ -11,6 +17,19 @@ import java.util.zip.ZipFile
 import static org.junit.jupiter.api.Assertions.*
 
 class ReleasePluginTest {
+
+  static MockWebServer server
+
+  @BeforeAll
+  static void startServer() {
+    server = new MockWebServer()
+    server.start()
+  }
+
+  @AfterAll
+  static void stopServer() {
+    server.shutdown()
+  }
 
   @Test
   void configurationCacheCompatibility() throws IOException {
@@ -179,6 +198,76 @@ base {
       assertFalse(result.output.contains("A snapshot cannot be released"))
     } finally {
       cleanupTestProject(testProjectDir)
+    }
+  }
+
+  @Test
+  void latestMavenVersionsListsRootAndSubprojects() throws IOException {
+    Map<String, String> versionsByArtifact = [
+        'multi-module-project': '1.2.0',
+        'lib-one'            : '2.3.4',
+        'lib-two'            : '3.4.5'
+    ]
+    server.setDispatcher(new MetadataDispatcher(versionsByArtifact))
+
+    String metadataBaseUrl = server.url('/maven2').toString()
+    File testProjectDir = TestFixtures.createMultiModuleProject(metadataBaseUrl)
+    try {
+      BuildResult firstRun = GradleRunner.create()
+          .withProjectDir(testProjectDir)
+          .withArguments('latestMavenVersions', '--configuration-cache')
+          .withPluginClasspath()
+          .forwardOutput()
+          .build()
+
+      assertEquals(TaskOutcome.SUCCESS, firstRun.task(':latestMavenVersions').outcome)
+      assertTrue(firstRun.output.contains(':lib-one: com.example:lib-one:2.3.4'))
+      assertTrue(firstRun.output.contains(':lib-two: com.example:lib-two:3.4.5'))
+      assertTrue(firstRun.output.contains('multi-module-project: com.example:multi-module-project:1.2.0'))
+      assertTrue(firstRun.output.contains('Configuration cache entry stored'))
+
+      BuildResult secondRun = GradleRunner.create()
+          .withProjectDir(testProjectDir)
+          .withArguments('latestMavenVersions', '--configuration-cache')
+          .withPluginClasspath()
+          .forwardOutput()
+          .build()
+
+      assertEquals(TaskOutcome.SUCCESS, secondRun.task(':latestMavenVersions').outcome)
+      assertTrue(secondRun.output.contains('Configuration cache entry reused') ||
+          secondRun.output.contains('Reusing configuration cache'))
+    } finally {
+      cleanupTestProject(testProjectDir)
+    }
+  }
+
+  private static final class MetadataDispatcher extends Dispatcher {
+    private final Map<String, String> versionsByArtifact
+
+    private MetadataDispatcher(Map<String, String> versionsByArtifact) {
+      this.versionsByArtifact = versionsByArtifact
+    }
+
+    @Override
+    MockResponse dispatch(RecordedRequest request) {
+      String path = request.path?.split('\\?')[0]
+      String artifact = path?.tokenize('/')?.reverse()?.getAt(1)
+      String version = artifact == null ? null : versionsByArtifact.get(artifact)
+      if (version == null) {
+        return new MockResponse().setResponseCode(404).setBody('Not Found')
+      }
+      new MockResponse()
+          .setResponseCode(200)
+          .setBody("""
+            <metadata>
+              <groupId>com.example</groupId>
+              <artifactId>${artifact}</artifactId>
+              <versioning>
+                <release>${version}</release>
+                <latest>${version}</latest>
+              </versioning>
+            </metadata>
+          """.stripIndent().trim())
     }
   }
 
