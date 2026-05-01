@@ -1,6 +1,13 @@
 # Release history
 
 ## Ver 2.2.1, in progress
+- Dependency updates:
+  - com.github.ben-manes.versions:com.github.ben-manes.versions.gradle.plugin [0.53.0 -> 0.54.0]
+  - com.gradle.plugin-publish:com.gradle.plugin-publish.gradle.plugin [2.1.0 -> 2.1.1]
+  - org.apache.groovy:groovy [4.0.30 -> 4.0.31]
+  - org.testcontainers:testcontainers [2.0.3 -> 2.0.5]
+  - org.testcontainers:testcontainers-junit-jupiter [2.0.3 -> 2.0.5]
+- Upgrade gradle version [9.4.0 -> 9.5.0]
 
 ## Ver 2.2.0, 2026-05-01
 - fixed groovy doc generation
