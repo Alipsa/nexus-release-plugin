@@ -202,6 +202,41 @@ base {
   }
 
   @Test
+  void releaseTaskUsesConfiguredStatusPolling() throws IOException {
+    String buildScript = TestFixtures.createBuildScript()
+        .replace(
+            "mavenPublication = publishing.publications.maven",
+            """mavenPublication = publishing.publications.maven
+        statusCheckRetries = 30
+        statusCheckIntervalSeconds = 20
+        initialStatusCheckDelaySeconds = 20"""
+        ) + """
+
+      tasks.register('printReleasePollingConfig') {
+        doLast {
+          def releaseTask = tasks.named('release').get()
+          println "polling=\${releaseTask.statusCheckRetries.get()},\${releaseTask.statusCheckIntervalSeconds.get()},\${releaseTask.initialStatusCheckDelaySeconds.get()}"
+        }
+      }
+      """.stripIndent()
+
+    File testProjectDir = TestFixtures.createTestProject(buildScript)
+    try {
+      BuildResult result = GradleRunner.create()
+          .withProjectDir(testProjectDir)
+          .withArguments('printReleasePollingConfig')
+          .withPluginClasspath()
+          .forwardOutput()
+          .build()
+
+      assertEquals(TaskOutcome.SUCCESS, result.task(':printReleasePollingConfig').outcome)
+      assertTrue(result.output.contains('polling=30,20,20'))
+    } finally {
+      cleanupTestProject(testProjectDir)
+    }
+  }
+
+  @Test
   void latestMavenVersionsListsRootAndSubprojects() throws IOException {
     Map<String, String> versionsByArtifact = [
         'multi-module-project': '1.2.0',

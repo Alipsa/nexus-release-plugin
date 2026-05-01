@@ -88,6 +88,18 @@ nexusReleasePlugin {
 }
 ```
 
+The `release` task waits for Central Portal to process the uploaded deployment before it checks status.
+The defaults are 10 retries, a 10 second interval between checks, and a 10 second initial delay.
+You can tune those values if Central Portal is taking longer to validate or publish your bundle:
+
+```groovy
+nexusReleasePlugin {
+   statusCheckRetries = 30
+   statusCheckIntervalSeconds = 20
+   initialStatusCheckDelaySeconds = 20
+}
+```
+
 If you need `latestMavenVersions` to query another Maven-compatible repository, set `metadataBaseUrl`:
 
 ```groovy

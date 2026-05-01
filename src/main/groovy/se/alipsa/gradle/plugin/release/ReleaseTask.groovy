@@ -49,6 +49,15 @@ abstract class ReleaseTask extends DefaultTask {
     @Input
     abstract Property<String> getArtifactId()
 
+    @Input
+    abstract Property<Integer> getStatusCheckRetries()
+
+    @Input
+    abstract Property<Integer> getStatusCheckIntervalSeconds()
+
+    @Input
+    abstract Property<Integer> getInitialStatusCheckDelaySeconds()
+
     ReleaseTask() {
         group = 'publishing'
         description = 'Create and upload a release bundle to Nexus'
@@ -94,17 +103,20 @@ abstract class ReleaseTask extends DefaultTask {
             throw new GradleException("Failed to find the staging profile id")
         }
 
-        logger.lifecycle("Project $projectNameValue published with deploymentId = $deploymentId, waiting 10s before checking...")
-        Thread.sleep(10000)
+        int initialDelaySeconds = nonNegative(initialStatusCheckDelaySeconds.get(), 'initialStatusCheckDelaySeconds')
+        int intervalSeconds = nonNegative(statusCheckIntervalSeconds.get(), 'statusCheckIntervalSeconds')
+        int retries = nonNegative(statusCheckRetries.get(), 'statusCheckRetries')
+
+        logger.lifecycle("Project $projectNameValue published with deploymentId = $deploymentId, waiting ${initialDelaySeconds}s before checking...")
+        sleepSeconds(initialDelaySeconds)
         Map<String, Object> status = releaseClient.getDeploymentStatus(deploymentId)
         String state = releaseClient.getDeploymentState(status)
 
-        int retries = 10
         while (!['PUBLISHING', 'PUBLISHED', 'FAILED'].contains(state) && retries-- > 0) {
             logger.lifecycle("Deploy status is $state")
+            sleepSeconds(intervalSeconds)
             status = releaseClient.getDeploymentStatus(deploymentId)
             state = releaseClient.getDeploymentState(status)
-            Thread.sleep(10000)
         }
         if (state == 'PUBLISHING') {
             logger.lifecycle("Project $projectNameValue uploaded and validated successfully!")
@@ -116,6 +128,19 @@ abstract class ReleaseTask extends DefaultTask {
             throw new GradleException("Failed to release $projectNameValue with deploymentId $deploymentId")
         } else {
             throw new GradleException("Failed to release $projectNameValue with deploymentId $deploymentId")
+        }
+    }
+
+    private static int nonNegative(int value, String propertyName) {
+        if (value < 0) {
+            throw new GradleException("${propertyName} must be greater than or equal to 0")
+        }
+        return value
+    }
+
+    private static void sleepSeconds(int seconds) {
+        if (seconds > 0) {
+            Thread.sleep(seconds * 1000L)
         }
     }
 

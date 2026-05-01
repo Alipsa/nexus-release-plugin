@@ -16,6 +16,9 @@ class NexusReleasePluginExtension {
     final Property<String> userName
     final Property<String> password
     final Property<MavenPublication> mavenPublication
+    final Property<Integer> statusCheckRetries
+    final Property<Integer> statusCheckIntervalSeconds
+    final Property<Integer> initialStatusCheckDelaySeconds
 
     // References to tasks with proper types
     TaskProvider<BundleTask> bundleTask
@@ -29,6 +32,9 @@ class NexusReleasePluginExtension {
         mavenPublication = objects.property(MavenPublication)
         nexusUrl = objects.property(String).convention(CentralPortalClient.CENTRAL_PORTAL_URL)
         metadataBaseUrl = objects.property(String).convention('https://repo1.maven.org/maven2')
+        statusCheckRetries = objects.property(Integer).convention(10)
+        statusCheckIntervalSeconds = objects.property(Integer).convention(10)
+        initialStatusCheckDelaySeconds = objects.property(Integer).convention(10)
     }
 
     void setNexusUrl(String url) {
@@ -49,6 +55,18 @@ class NexusReleasePluginExtension {
 
     void setMavenPublication(MavenPublication publication) {
         mavenPublication.set(publication)
+    }
+
+    void setStatusCheckRetries(Integer retries) {
+        statusCheckRetries.set(retries)
+    }
+
+    void setStatusCheckIntervalSeconds(Integer seconds) {
+        statusCheckIntervalSeconds.set(seconds)
+    }
+
+    void setInitialStatusCheckDelaySeconds(Integer seconds) {
+        initialStatusCheckDelaySeconds.set(seconds)
     }
 
 }

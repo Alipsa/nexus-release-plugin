@@ -62,6 +62,9 @@ class NexusReleasePlugin implements Plugin<Project> {
             task.nexusUrl.set(extension.nexusUrl)
             task.userName.set(extension.userName)
             task.password.set(extension.password)
+            task.statusCheckRetries.set(extension.statusCheckRetries)
+            task.statusCheckIntervalSeconds.set(extension.statusCheckIntervalSeconds)
+            task.initialStatusCheckDelaySeconds.set(extension.initialStatusCheckDelaySeconds)
         }
 
         TaskProvider<LatestMavenVersionsTask> latestMavenVersionsTask = project.tasks.register('latestMavenVersions', LatestMavenVersionsTask) { LatestMavenVersionsTask task ->

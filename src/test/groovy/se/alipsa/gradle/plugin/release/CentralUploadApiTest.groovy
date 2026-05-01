@@ -51,6 +51,12 @@ class CentralUploadApiTest {
     def targetUrl = "${url.scheme()}://${url.host()}:${url.port()}/api/v1".toString()
 
     String buildScript = TestFixtures.createBuildScript(targetUrl)
+        .replace(
+            'mavenPublication = publishing.publications.maven',
+            '''mavenPublication = publishing.publications.maven
+        initialStatusCheckDelaySeconds = 0
+        statusCheckIntervalSeconds = 0'''
+        )
     File testProjectDir = TestFixtures.createTestProject(buildScript)
 
     BuildResult result = GradleRunner.create()
@@ -108,6 +114,12 @@ class CentralUploadApiTest {
     def targetUrl = "${url.scheme()}://${url.host()}:${url.port()}/api/v1".toString()
 
     String buildScript = TestFixtures.createBuildScript(targetUrl)
+        .replace(
+            'mavenPublication = publishing.publications.maven',
+            '''mavenPublication = publishing.publications.maven
+        initialStatusCheckDelaySeconds = 0
+        statusCheckIntervalSeconds = 0'''
+        )
     File testProjectDir = TestFixtures.createTestProject(buildScript)
 
     BuildResult result = GradleRunner.create()

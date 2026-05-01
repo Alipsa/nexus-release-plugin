@@ -3,6 +3,7 @@
 ## Ver 2.2.0, In progress
 - fixed groovy doc generation
 - add latestMavenVersions task to report the latest versions of the project (and sub modules) published to maven central.
+- Add configurable configuration properties: statusCheckRetries, statusCheckIntervalSeconds, initialStatusCheckDelaySeconds
 
 ## Ver 2.1.2, 2026-03-18
 - Enable configuration cache and parallel execution.
