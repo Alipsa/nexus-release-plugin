@@ -1,5 +1,7 @@
 # Release history
 
+## Ver 2.2.1, in progress
+
 ## Ver 2.2.0, 2026-05-01
 - fixed groovy doc generation
 - add latestMavenVersions task to report the latest versions of the project (and sub modules) published to maven central.

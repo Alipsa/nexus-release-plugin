@@ -99,6 +99,53 @@ nexusReleasePlugin {
    initialStatusCheckDelaySeconds = 20
 }
 ```
+## The latestMavenVersions task
+The latestMavenVersions task can be used to get a report of the latest versions of the project (and sub modules) published to maven central. This can be useful to:
+- check that the version you are about to release is not already published to maven central.
+- check if a release has been published and is now available in maven central
+- check the latest version of a dependency that you have published.
+
+Example build.gradle:
+```groovy
+plugins {
+  id 'groovy'
+  id 'maven-publish'
+  id 'se.alipsa.nexus-release-plugin' version '2.2.0'
+}
+
+group = 'se.alipsa'
+version = '1.0.0'
+
+publishing {
+  publications {
+    maven(MavenPublication) {
+      from components.java
+    }
+  }
+}
+
+nexusReleasePlugin {
+  mavenPublication = publishing.publications.maven
+}
+```
+
+Run:
+```
+./gradlew latestMavenVersions
+```
+
+Example output:
+```
+my-project: se.alipsa:my-project:1.2.3
+```
+
+For a multi-module root project, running it from the root lists the root project and subprojects using this plugin:
+
+```
+my-root-project: se.alipsa:my-root-project:1.2.3
+:core: se.alipsa:core:1.4.0
+:csv: se.alipsa:csv:2.0.1
+```
 
 If you need `latestMavenVersions` to query another Maven-compatible repository, set `metadataBaseUrl`:
 
