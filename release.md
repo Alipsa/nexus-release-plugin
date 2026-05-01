@@ -1,6 +1,6 @@
 # Release history
 
-## Ver 2.2.0, In progress
+## Ver 2.2.0, 2026-05-01
 - fixed groovy doc generation
 - add latestMavenVersions task to report the latest versions of the project (and sub modules) published to maven central.
 - Add configurable configuration properties: statusCheckRetries, statusCheckIntervalSeconds, initialStatusCheckDelaySeconds
