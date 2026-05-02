@@ -283,7 +283,8 @@ base {
     server.setDispatcher(new GithubReleaseDispatcher(repoSlug, expectedTag))
 
     String githubApiBaseUrl = server.url('/').toString()
-    File testProjectDir = TestFixtures.createGithubProject(githubApiBaseUrl, repoSlug)
+    String remoteUrl = "${server.url('/')}${repoSlug}.git"
+    File testProjectDir = TestFixtures.createGithubProject(githubApiBaseUrl, repoSlug, remoteUrl)
     try {
       BuildResult firstRun = GradleRunner.create()
           .withProjectDir(testProjectDir)
@@ -318,7 +319,8 @@ base {
     server.setDispatcher(new GithubReleaseDispatcher(repoSlug, null))
 
     String githubApiBaseUrl = server.url('/').toString()
-    File testProjectDir = TestFixtures.createGithubProject(githubApiBaseUrl, repoSlug)
+    String remoteUrl = "${server.url('/')}${repoSlug}.git"
+    File testProjectDir = TestFixtures.createGithubProject(githubApiBaseUrl, repoSlug, remoteUrl)
     try {
       BuildResult result = GradleRunner.create()
           .withProjectDir(testProjectDir)
@@ -342,7 +344,8 @@ base {
     server.setDispatcher(new GithubReleaseDispatcher(repoSlug, expectedTag))
 
     String githubApiBaseUrl = server.url('/').toString()
-    String enterpriseRemote = "https://github.example.com/${repoSlug}.git"
+    // Remote host must match the API host (localhost here); the "enterprise" aspect is the custom API URL
+    String enterpriseRemote = "${server.url('/')}${repoSlug}.git"
     File testProjectDir = TestFixtures.createGithubProject(githubApiBaseUrl, repoSlug, enterpriseRemote)
     try {
       BuildResult result = GradleRunner.create()
@@ -381,6 +384,84 @@ base {
           "Expected output to contain '${repoSlug}: ${expectedTag}' but was:\n${result.output}")
     } finally {
       cleanupTestProject(testProjectDir)
+    }
+  }
+
+  @Test
+  void latestGithubReleaseUsesGhCliTokenWhenAvailable() throws IOException {
+    String repoSlug = 'owner/auth-repo'
+    String expectedTag = 'v5.0.0'
+    String fakeToken = 'test-gh-token-abc123'
+    server.setDispatcher(new AuthRequiredGithubReleaseDispatcher(repoSlug, expectedTag, fakeToken))
+
+    String githubApiBaseUrl = server.url('/').toString()
+    String remoteUrl = "${server.url('/')}${repoSlug}.git"
+    File testProjectDir = TestFixtures.createGithubProjectWithFakeGh(githubApiBaseUrl, repoSlug, fakeToken, remoteUrl)
+    try {
+      String ghBinPath = new File(testProjectDir, 'bin/gh').absolutePath
+      BuildResult result = GradleRunner.create()
+          .withProjectDir(testProjectDir)
+          .withArguments("-Dse.alipsa.nexus-release-plugin.ghBin=${ghBinPath}", 'latestGithubRelease')
+          .withPluginClasspath()
+          .forwardOutput()
+          .build()
+
+      assertEquals(TaskOutcome.SUCCESS, result.task(':latestGithubRelease').outcome)
+      assertTrue(result.output.contains("${repoSlug}: ${expectedTag}"),
+          "Expected output to contain '${repoSlug}: ${expectedTag}' but was:\n${result.output}")
+    } finally {
+      cleanupTestProject(testProjectDir)
+    }
+  }
+
+  @Test
+  void latestGithubReleaseIgnoresNonGithubRemoteWhenUsingDefaultApi() throws IOException {
+    // A GitLab remote with the default api.github.com should produce "no repo detected", not a false positive.
+    // Since repoCoordinates is null, no HTTP call is made — safe to use the real API URL here.
+    String repoSlug = 'owner/non-github-repo'
+    File testProjectDir = TestFixtures.createGithubProject(
+        'https://api.github.com', repoSlug, "https://gitlab.com/${repoSlug}.git")
+    try {
+      BuildResult result = GradleRunner.create()
+          .withProjectDir(testProjectDir)
+          .withArguments('latestGithubRelease')
+          .withPluginClasspath()
+          .forwardOutput()
+          .build()
+
+      assertEquals(TaskOutcome.SUCCESS, result.task(':latestGithubRelease').outcome)
+      assertTrue(result.output.contains('No GitHub repository detected'),
+          "Expected 'No GitHub repository detected' for non-GitHub remote but got:\n${result.output}")
+    } finally {
+      cleanupTestProject(testProjectDir)
+    }
+  }
+
+  private static final class AuthRequiredGithubReleaseDispatcher extends Dispatcher {
+    private final String repoSlug
+    private final String tagName
+    private final String expectedToken
+
+    AuthRequiredGithubReleaseDispatcher(String repoSlug, String tagName, String expectedToken) {
+      this.repoSlug = repoSlug
+      this.tagName = tagName
+      this.expectedToken = expectedToken
+    }
+
+    @Override
+    MockResponse dispatch(RecordedRequest request) {
+      String auth = request.getHeader('Authorization')
+      if (auth != "Bearer ${expectedToken}") {
+        return new MockResponse().setResponseCode(401).setBody('{"message":"Requires authentication"}')
+      }
+      String expectedPath = "/repos/${repoSlug}/releases/latest"
+      if (request.path?.startsWith(expectedPath)) {
+        return new MockResponse()
+            .setResponseCode(200)
+            .addHeader('Content-Type', 'application/json')
+            .setBody("""{"tag_name":"${tagName}","name":"Release ${tagName}"}""")
+      }
+      return new MockResponse().setResponseCode(404)
     }
   }
 

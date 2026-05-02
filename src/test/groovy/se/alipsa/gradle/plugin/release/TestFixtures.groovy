@@ -286,6 +286,23 @@ class TestFixtures {
     testProjectDir
   }
 
+  static File createGithubProjectWithFakeGh(String githubApiBaseUrl, String repoSlug, String fakeToken, String remoteUrl = null) {
+    File testProjectDir = createGithubProject(githubApiBaseUrl, repoSlug, remoteUrl)
+
+    File binDir = new File(testProjectDir, 'bin')
+    binDir.mkdirs()
+    File ghScript = new File(binDir, 'gh')
+    ghScript.text = """#!/bin/sh
+if [ "\$1" = "auth" ] && [ "\$2" = "token" ]; then
+  echo "${fakeToken}"
+  exit 0
+fi
+exit 1
+"""
+    ghScript.setExecutable(true)
+    testProjectDir
+  }
+
   private static void createGroovySource(File projectDir, String fileName, String content) {
     File srcDir = new File(projectDir, 'src/main/groovy/example')
     srcDir.mkdirs()

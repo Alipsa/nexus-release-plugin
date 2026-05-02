@@ -43,14 +43,36 @@ abstract class LatestGithubReleaseTask extends DefaultTask {
 
         String baseUrl = githubApiBaseUrl.get().replaceAll('/+$', '')
         String url = "${baseUrl}/repos/${repo}/releases/latest"
+        String token = githubToken.orNull ?: resolveGhToken(baseUrl)
 
         try {
-            String tag = fetchLatestRelease(url, githubToken.orNull)
+            String tag = fetchLatestRelease(url, token)
             logger.quiet("${repo}: ${tag}")
         } catch (FileNotFoundException ignored) {
             logger.quiet("${repo}: no releases found")
         } catch (Exception e) {
             logger.quiet("${repo}: error querying GitHub API (${e.message})")
+        }
+    }
+
+    @CompileStatic
+    private static String resolveGhToken(String apiBaseUrl) {
+        try {
+            String ghBin = System.getProperty('se.alipsa.nexus-release-plugin.ghBin', 'gh')
+            List<String> cmd = new ArrayList<>([ghBin, 'auth', 'token'])
+            if (apiBaseUrl != 'https://api.github.com') {
+                String host = URI.create(apiBaseUrl).host
+                if (host) {
+                    cmd.add('--hostname')
+                    cmd.add(host)
+                }
+            }
+            Process process = new ProcessBuilder(cmd).start()
+            String token = process.inputStream.text.trim()
+            process.waitFor()
+            return token ?: null
+        } catch (Exception ignored) {
+            return null
         }
     }
 

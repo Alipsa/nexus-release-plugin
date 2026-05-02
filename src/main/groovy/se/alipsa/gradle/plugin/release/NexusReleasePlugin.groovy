@@ -80,9 +80,11 @@ class NexusReleasePlugin implements Plugin<Project> {
         TaskProvider<LatestGithubReleaseTask> latestGithubReleaseTask = project.tasks.register('latestGithubRelease', LatestGithubReleaseTask) { LatestGithubReleaseTask task ->
             task.githubApiBaseUrl.set(extension.githubApiBaseUrl)
             task.githubToken.set(extension.githubToken)
-            task.repoCoordinates.set(extension.githubRepo.orElse(project.provider {
-                detectGithubRepo(project.rootProject.projectDir)
-            }))
+            task.repoCoordinates.set(extension.githubRepo.orElse(
+                extension.githubApiBaseUrl.map { String apiBaseUrl ->
+                    detectGithubRepo(project.rootProject.projectDir, apiBaseUrl)
+                }
+            ))
         }
 
         // Expose tasks via the extension for external access
@@ -122,9 +124,9 @@ class NexusReleasePlugin implements Plugin<Project> {
         "${displayName}\t${groupId}\t${artifactId}"
     }
 
-    private static String detectGithubRepo(File projectDir) {
+    private static String detectGithubRepo(File projectDir, String apiBaseUrl) {
         String originUrl = findOriginUrl(projectDir)
-        return originUrl ? parseGithubCoordinates(originUrl) : null
+        return originUrl ? parseGithubCoordinates(originUrl, apiBaseUrl) : null
     }
 
     private static String findOriginUrl(File startDir) {
@@ -181,12 +183,16 @@ class NexusReleasePlugin implements Plugin<Project> {
         return null
     }
 
-    private static String parseGithubCoordinates(String remoteUrl) {
+    private static String parseGithubCoordinates(String remoteUrl, String apiBaseUrl) {
         if (!remoteUrl) return null
-        Matcher ssh = Pattern.compile('^git@[^:]+:(.+?)(?:\\.git)?$').matcher(remoteUrl)
-        if (ssh.matches()) return ssh.group(1)
-        Matcher https = Pattern.compile('^https?://[^/]+/(.+?)(?:\\.git)?$').matcher(remoteUrl)
-        if (https.matches()) return https.group(1)
+        String apiHost = URI.create(apiBaseUrl).host ?: 'api.github.com'
+        // For api.github.com the remote host is github.com; for Enterprise the api and git hosts match
+        String expectedRemoteHost = (apiHost == 'api.github.com') ? 'github.com' : apiHost
+        Matcher ssh = Pattern.compile('^git@([^:]+):(.+?)(?:\\.git)?$').matcher(remoteUrl)
+        if (ssh.matches() && ssh.group(1) == expectedRemoteHost) return ssh.group(2)
+        // Strip port from remote host so http://localhost:8080/x matches API host 'localhost'
+        Matcher https = Pattern.compile('^https?://([^/:]+)(?::\\d+)?/(.+?)(?:\\.git)?$').matcher(remoteUrl)
+        if (https.matches() && https.group(1) == expectedRemoteHost) return https.group(2)
         return null
     }
 
