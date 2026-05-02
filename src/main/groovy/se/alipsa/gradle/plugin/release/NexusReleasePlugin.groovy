@@ -188,8 +188,11 @@ class NexusReleasePlugin implements Plugin<Project> {
         String apiHost = URI.create(apiBaseUrl).host ?: 'api.github.com'
         // For api.github.com the remote host is github.com; for Enterprise the api and git hosts match
         String expectedRemoteHost = (apiHost == 'api.github.com') ? 'github.com' : apiHost
-        Matcher ssh = Pattern.compile('^git@([^:]+):(.+?)(?:\\.git)?$').matcher(remoteUrl)
-        if (ssh.matches() && ssh.group(1) == expectedRemoteHost) return ssh.group(2)
+        Matcher sshScp = Pattern.compile('^git@([^:]+):(.+?)(?:\\.git)?$').matcher(remoteUrl)
+        if (sshScp.matches() && sshScp.group(1) == expectedRemoteHost) return sshScp.group(2)
+        // ssh://[user@]host[:port]/owner/repo — strip optional user@ and port
+        Matcher sshUrl = Pattern.compile('^ssh://(?:[^@]+@)?([^/:]+)(?::\\d+)?/(.+?)(?:\\.git)?$').matcher(remoteUrl)
+        if (sshUrl.matches() && sshUrl.group(1) == expectedRemoteHost) return sshUrl.group(2)
         // Strip port from remote host so http://localhost:8080/x matches API host 'localhost'
         Matcher https = Pattern.compile('^https?://([^/:]+)(?::\\d+)?/(.+?)(?:\\.git)?$').matcher(remoteUrl)
         if (https.matches() && https.group(1) == expectedRemoteHost) return https.group(2)

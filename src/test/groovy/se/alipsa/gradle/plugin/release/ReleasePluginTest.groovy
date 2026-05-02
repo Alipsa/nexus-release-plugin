@@ -437,6 +437,32 @@ base {
     }
   }
 
+  @Test
+  void latestGithubReleaseDetectsSshSchemeRemote() throws IOException {
+    String repoSlug = 'owner/ssh-scheme-repo'
+    String expectedTag = 'v6.0.0'
+    server.setDispatcher(new GithubReleaseDispatcher(repoSlug, expectedTag))
+
+    String githubApiBaseUrl = server.url('/').toString()
+    // ssh:// URL format (distinct from scp-style git@github.com:owner/repo.git)
+    String sshRemote = "ssh://git@localhost:${server.port}/${repoSlug}.git"
+    File testProjectDir = TestFixtures.createGithubProject(githubApiBaseUrl, repoSlug, sshRemote)
+    try {
+      BuildResult result = GradleRunner.create()
+          .withProjectDir(testProjectDir)
+          .withArguments('latestGithubRelease')
+          .withPluginClasspath()
+          .forwardOutput()
+          .build()
+
+      assertEquals(TaskOutcome.SUCCESS, result.task(':latestGithubRelease').outcome)
+      assertTrue(result.output.contains("${repoSlug}: ${expectedTag}"),
+          "Expected output to contain '${repoSlug}: ${expectedTag}' but was:\n${result.output}")
+    } finally {
+      cleanupTestProject(testProjectDir)
+    }
+  }
+
   private static final class AuthRequiredGithubReleaseDispatcher extends Dispatcher {
     private final String repoSlug
     private final String tagName
