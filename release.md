@@ -8,6 +8,7 @@
   - org.testcontainers:testcontainers [2.0.3 -> 2.0.5]
   - org.testcontainers:testcontainers-junit-jupiter [2.0.3 -> 2.0.5]
 - Upgrade gradle version [9.4.0 -> 9.5.0]
+- Added LatestGithubRelease Task which, similarly to latestMavenVersions, reports the latest release version of the project published to github releases. 
 
 ## Ver 2.2.0, 2026-05-01
 - fixed groovy doc generation
