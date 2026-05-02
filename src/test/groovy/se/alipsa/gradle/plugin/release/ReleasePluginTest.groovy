@@ -276,6 +276,246 @@ base {
     }
   }
 
+  @Test
+  void latestGithubReleaseDisplaysLatestTag() throws IOException {
+    String repoSlug = 'owner/test-repo'
+    String expectedTag = 'v2.5.0'
+    server.setDispatcher(new GithubReleaseDispatcher(repoSlug, expectedTag))
+
+    String githubApiBaseUrl = server.url('/').toString()
+    String remoteUrl = "${server.url('/')}${repoSlug}.git"
+    File testProjectDir = TestFixtures.createGithubProject(githubApiBaseUrl, repoSlug, remoteUrl)
+    try {
+      BuildResult firstRun = GradleRunner.create()
+          .withProjectDir(testProjectDir)
+          .withArguments('latestGithubRelease', '--configuration-cache')
+          .withPluginClasspath()
+          .forwardOutput()
+          .build()
+
+      assertEquals(TaskOutcome.SUCCESS, firstRun.task(':latestGithubRelease').outcome)
+      assertTrue(firstRun.output.contains("${repoSlug}: ${expectedTag}"),
+          "Expected output to contain '${repoSlug}: ${expectedTag}' but was:\n${firstRun.output}")
+      assertTrue(firstRun.output.contains('Configuration cache entry stored'))
+
+      BuildResult secondRun = GradleRunner.create()
+          .withProjectDir(testProjectDir)
+          .withArguments('latestGithubRelease', '--configuration-cache')
+          .withPluginClasspath()
+          .forwardOutput()
+          .build()
+
+      assertEquals(TaskOutcome.SUCCESS, secondRun.task(':latestGithubRelease').outcome)
+      assertTrue(secondRun.output.contains('Configuration cache entry reused') ||
+          secondRun.output.contains('Reusing configuration cache'))
+    } finally {
+      cleanupTestProject(testProjectDir)
+    }
+  }
+
+  @Test
+  void latestGithubReleaseReportsNoReleasesWhenNoneFound() throws IOException {
+    String repoSlug = 'owner/no-releases-repo'
+    server.setDispatcher(new GithubReleaseDispatcher(repoSlug, null))
+
+    String githubApiBaseUrl = server.url('/').toString()
+    String remoteUrl = "${server.url('/')}${repoSlug}.git"
+    File testProjectDir = TestFixtures.createGithubProject(githubApiBaseUrl, repoSlug, remoteUrl)
+    try {
+      BuildResult result = GradleRunner.create()
+          .withProjectDir(testProjectDir)
+          .withArguments('latestGithubRelease')
+          .withPluginClasspath()
+          .forwardOutput()
+          .build()
+
+      assertEquals(TaskOutcome.SUCCESS, result.task(':latestGithubRelease').outcome)
+      assertTrue(result.output.contains("${repoSlug}: no releases found"),
+          "Expected output to contain '${repoSlug}: no releases found' but was:\n${result.output}")
+    } finally {
+      cleanupTestProject(testProjectDir)
+    }
+  }
+
+  @Test
+  void latestGithubReleaseWorksWithEnterpriseRemote() throws IOException {
+    String repoSlug = 'owner/enterprise-repo'
+    String expectedTag = 'v3.1.0'
+    server.setDispatcher(new GithubReleaseDispatcher(repoSlug, expectedTag))
+
+    String githubApiBaseUrl = server.url('/').toString()
+    // Remote host must match the API host (localhost here); the "enterprise" aspect is the custom API URL
+    String enterpriseRemote = "${server.url('/')}${repoSlug}.git"
+    File testProjectDir = TestFixtures.createGithubProject(githubApiBaseUrl, repoSlug, enterpriseRemote)
+    try {
+      BuildResult result = GradleRunner.create()
+          .withProjectDir(testProjectDir)
+          .withArguments('latestGithubRelease')
+          .withPluginClasspath()
+          .forwardOutput()
+          .build()
+
+      assertEquals(TaskOutcome.SUCCESS, result.task(':latestGithubRelease').outcome)
+      assertTrue(result.output.contains("${repoSlug}: ${expectedTag}"),
+          "Expected output to contain '${repoSlug}: ${expectedTag}' but was:\n${result.output}")
+    } finally {
+      cleanupTestProject(testProjectDir)
+    }
+  }
+
+  @Test
+  void latestGithubReleaseUsesExplicitGithubRepoWhenSet() throws IOException {
+    String repoSlug = 'owner/explicit-repo'
+    String expectedTag = 'v4.0.0'
+    server.setDispatcher(new GithubReleaseDispatcher(repoSlug, expectedTag))
+
+    String githubApiBaseUrl = server.url('/').toString()
+    File testProjectDir = TestFixtures.createGithubProjectWithExplicitRepo(githubApiBaseUrl, repoSlug)
+    try {
+      BuildResult result = GradleRunner.create()
+          .withProjectDir(testProjectDir)
+          .withArguments('latestGithubRelease')
+          .withPluginClasspath()
+          .forwardOutput()
+          .build()
+
+      assertEquals(TaskOutcome.SUCCESS, result.task(':latestGithubRelease').outcome)
+      assertTrue(result.output.contains("${repoSlug}: ${expectedTag}"),
+          "Expected output to contain '${repoSlug}: ${expectedTag}' but was:\n${result.output}")
+    } finally {
+      cleanupTestProject(testProjectDir)
+    }
+  }
+
+  @Test
+  void latestGithubReleaseUsesGhCliTokenWhenAvailable() throws IOException {
+    String repoSlug = 'owner/auth-repo'
+    String expectedTag = 'v5.0.0'
+    String fakeToken = 'test-gh-token-abc123'
+    server.setDispatcher(new AuthRequiredGithubReleaseDispatcher(repoSlug, expectedTag, fakeToken))
+
+    String githubApiBaseUrl = server.url('/').toString()
+    String remoteUrl = "${server.url('/')}${repoSlug}.git"
+    File testProjectDir = TestFixtures.createGithubProjectWithFakeGh(githubApiBaseUrl, repoSlug, fakeToken, remoteUrl)
+    try {
+      String ghBinPath = new File(testProjectDir, 'bin/gh').absolutePath
+      BuildResult result = GradleRunner.create()
+          .withProjectDir(testProjectDir)
+          .withArguments("-Dse.alipsa.nexus-release-plugin.ghBin=${ghBinPath}", 'latestGithubRelease')
+          .withPluginClasspath()
+          .forwardOutput()
+          .build()
+
+      assertEquals(TaskOutcome.SUCCESS, result.task(':latestGithubRelease').outcome)
+      assertTrue(result.output.contains("${repoSlug}: ${expectedTag}"),
+          "Expected output to contain '${repoSlug}: ${expectedTag}' but was:\n${result.output}")
+    } finally {
+      cleanupTestProject(testProjectDir)
+    }
+  }
+
+  @Test
+  void latestGithubReleaseIgnoresNonGithubRemoteWhenUsingDefaultApi() throws IOException {
+    // A GitLab remote with the default api.github.com should produce "no repo detected", not a false positive.
+    // Since repoCoordinates is null, no HTTP call is made — safe to use the real API URL here.
+    String repoSlug = 'owner/non-github-repo'
+    File testProjectDir = TestFixtures.createGithubProject(
+        'https://api.github.com', repoSlug, "https://gitlab.com/${repoSlug}.git")
+    try {
+      BuildResult result = GradleRunner.create()
+          .withProjectDir(testProjectDir)
+          .withArguments('latestGithubRelease')
+          .withPluginClasspath()
+          .forwardOutput()
+          .build()
+
+      assertEquals(TaskOutcome.SUCCESS, result.task(':latestGithubRelease').outcome)
+      assertTrue(result.output.contains('No GitHub repository detected'),
+          "Expected 'No GitHub repository detected' for non-GitHub remote but got:\n${result.output}")
+    } finally {
+      cleanupTestProject(testProjectDir)
+    }
+  }
+
+  @Test
+  void latestGithubReleaseDetectsSshSchemeRemote() throws IOException {
+    String repoSlug = 'owner/ssh-scheme-repo'
+    String expectedTag = 'v6.0.0'
+    server.setDispatcher(new GithubReleaseDispatcher(repoSlug, expectedTag))
+
+    String githubApiBaseUrl = server.url('/').toString()
+    // ssh:// URL format (distinct from scp-style git@github.com:owner/repo.git)
+    String sshRemote = "ssh://git@localhost:${server.port}/${repoSlug}.git"
+    File testProjectDir = TestFixtures.createGithubProject(githubApiBaseUrl, repoSlug, sshRemote)
+    try {
+      BuildResult result = GradleRunner.create()
+          .withProjectDir(testProjectDir)
+          .withArguments('latestGithubRelease')
+          .withPluginClasspath()
+          .forwardOutput()
+          .build()
+
+      assertEquals(TaskOutcome.SUCCESS, result.task(':latestGithubRelease').outcome)
+      assertTrue(result.output.contains("${repoSlug}: ${expectedTag}"),
+          "Expected output to contain '${repoSlug}: ${expectedTag}' but was:\n${result.output}")
+    } finally {
+      cleanupTestProject(testProjectDir)
+    }
+  }
+
+  private static final class AuthRequiredGithubReleaseDispatcher extends Dispatcher {
+    private final String repoSlug
+    private final String tagName
+    private final String expectedToken
+
+    AuthRequiredGithubReleaseDispatcher(String repoSlug, String tagName, String expectedToken) {
+      this.repoSlug = repoSlug
+      this.tagName = tagName
+      this.expectedToken = expectedToken
+    }
+
+    @Override
+    MockResponse dispatch(RecordedRequest request) {
+      String auth = request.getHeader('Authorization')
+      if (auth != "Bearer ${expectedToken}") {
+        return new MockResponse().setResponseCode(401).setBody('{"message":"Requires authentication"}')
+      }
+      String expectedPath = "/repos/${repoSlug}/releases/latest"
+      if (request.path?.startsWith(expectedPath)) {
+        return new MockResponse()
+            .setResponseCode(200)
+            .addHeader('Content-Type', 'application/json')
+            .setBody("""{"tag_name":"${tagName}","name":"Release ${tagName}"}""")
+      }
+      return new MockResponse().setResponseCode(404)
+    }
+  }
+
+  private static final class GithubReleaseDispatcher extends Dispatcher {
+    private final String repoSlug
+    private final String tagName
+
+    GithubReleaseDispatcher(String repoSlug, String tagName) {
+      this.repoSlug = repoSlug
+      this.tagName = tagName
+    }
+
+    @Override
+    MockResponse dispatch(RecordedRequest request) {
+      String expectedPath = "/repos/${repoSlug}/releases/latest"
+      if (request.path?.startsWith(expectedPath)) {
+        if (tagName == null) {
+          return new MockResponse().setResponseCode(404).setBody('{"message":"Not Found"}')
+        }
+        return new MockResponse()
+            .setResponseCode(200)
+            .addHeader('Content-Type', 'application/json')
+            .setBody("""{"tag_name":"${tagName}","name":"Release ${tagName}"}""")
+      }
+      return new MockResponse().setResponseCode(404)
+    }
+  }
+
   private static final class MetadataDispatcher extends Dispatcher {
     private final Map<String, String> versionsByArtifact
 

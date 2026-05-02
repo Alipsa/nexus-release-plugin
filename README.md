@@ -75,6 +75,7 @@ The plugin adds these tasks:
 - `bundle`: creates the Maven Central bundle from the configured publication.
 - `release`: validates and uploads the bundle to Central Portal.
 - `latestMavenVersions`: lists the latest published version for the current project, and when run on the root project also for published subprojects that use this plugin.
+- `latestGithubRelease`: displays the latest GitHub release tag for this repository (auto-detected from the `origin` remote).
 
 If you want to publish to another url that behaves just like the Central Publishing API, you 
 can set the property `nexusUrl` in the nexusReleasePlugin e.g:
@@ -155,6 +156,57 @@ nexusReleasePlugin {
    mavenPublication = publishing.publications.maven
 }
 ```
+
+When the artifact has not yet been published, the output includes the coordinates that were searched so you can verify the configuration is correct:
+```
+my-project (se.alipsa:my-project): not found in metadata repository
+```
+
+## The latestGithubRelease task
+
+The `latestGithubRelease` task displays the latest GitHub release tag for this repository.
+The repository is auto-detected from the `origin` remote in `.git/config` — no configuration needed for public repos.
+
+Run:
+```
+./gradlew latestGithubRelease
+```
+
+Example output:
+```
+Alipsa/my-project: v1.2.3
+```
+
+If no releases exist yet:
+```
+Alipsa/my-project: no releases found
+```
+
+For private repositories, or to avoid GitHub API rate limits, set a token:
+
+```groovy
+nexusReleasePlugin {
+   githubToken = githubAccessToken  // from gradle.properties
+}
+```
+
+For GitHub Enterprise, the repository is auto-detected from the Enterprise remote URL (e.g. `https://github.example.com/owner/repo.git`). You only need to set the API base URL:
+
+```groovy
+nexusReleasePlugin {
+   githubApiBaseUrl = "https://github.example.com/api/v3"
+}
+```
+
+If auto-detection does not work (e.g. non-standard hosting or no remote configured), set the repository slug explicitly:
+
+```groovy
+nexusReleasePlugin {
+   githubRepo = "owner/repo"
+}
+```
+
+An explicit `githubRepo` always takes priority over auto-detection.
 
 ## Building the Plugin
 

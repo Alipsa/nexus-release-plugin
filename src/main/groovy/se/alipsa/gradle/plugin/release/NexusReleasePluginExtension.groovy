@@ -19,11 +19,15 @@ class NexusReleasePluginExtension {
     final Property<Integer> statusCheckRetries
     final Property<Integer> statusCheckIntervalSeconds
     final Property<Integer> initialStatusCheckDelaySeconds
+    final Property<String> githubApiBaseUrl
+    final Property<String> githubToken
+    final Property<String> githubRepo
 
     // References to tasks with proper types
     TaskProvider<BundleTask> bundleTask
     TaskProvider<ReleaseTask> releaseTask
     TaskProvider<LatestMavenVersionsTask> latestMavenVersionsTask
+    TaskProvider<LatestGithubReleaseTask> latestGithubReleaseTask
 
     @Inject
     NexusReleasePluginExtension(ObjectFactory objects) {
@@ -35,6 +39,9 @@ class NexusReleasePluginExtension {
         statusCheckRetries = objects.property(Integer).convention(10)
         statusCheckIntervalSeconds = objects.property(Integer).convention(10)
         initialStatusCheckDelaySeconds = objects.property(Integer).convention(10)
+        githubApiBaseUrl = objects.property(String).convention('https://api.github.com')
+        githubToken = objects.property(String)
+        githubRepo = objects.property(String)
     }
 
     void setNexusUrl(String url) {
@@ -67,6 +74,18 @@ class NexusReleasePluginExtension {
 
     void setInitialStatusCheckDelaySeconds(Integer seconds) {
         initialStatusCheckDelaySeconds.set(seconds)
+    }
+
+    void setGithubApiBaseUrl(String url) {
+        githubApiBaseUrl.set(url)
+    }
+
+    void setGithubToken(String token) {
+        githubToken.set(token)
+    }
+
+    void setGithubRepo(String repo) {
+        githubRepo.set(repo)
     }
 
 }
