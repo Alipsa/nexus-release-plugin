@@ -190,13 +190,23 @@ nexusReleasePlugin {
 }
 ```
 
-For GitHub Enterprise, override the API base URL:
+For GitHub Enterprise, the repository is auto-detected from the Enterprise remote URL (e.g. `https://github.example.com/owner/repo.git`). You only need to set the API base URL:
 
 ```groovy
 nexusReleasePlugin {
    githubApiBaseUrl = "https://github.example.com/api/v3"
 }
 ```
+
+If auto-detection does not work (e.g. non-standard hosting or no remote configured), set the repository slug explicitly:
+
+```groovy
+nexusReleasePlugin {
+   githubRepo = "owner/repo"
+}
+```
+
+An explicit `githubRepo` always takes priority over auto-detection.
 
 ## Building the Plugin
 

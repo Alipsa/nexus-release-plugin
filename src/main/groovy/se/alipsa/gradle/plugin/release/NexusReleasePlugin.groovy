@@ -80,9 +80,9 @@ class NexusReleasePlugin implements Plugin<Project> {
         TaskProvider<LatestGithubReleaseTask> latestGithubReleaseTask = project.tasks.register('latestGithubRelease', LatestGithubReleaseTask) { LatestGithubReleaseTask task ->
             task.githubApiBaseUrl.set(extension.githubApiBaseUrl)
             task.githubToken.set(extension.githubToken)
-            task.repoCoordinates.set(project.provider {
+            task.repoCoordinates.set(extension.githubRepo.orElse(project.provider {
                 detectGithubRepo(project.rootProject.projectDir)
-            })
+            }))
         }
 
         // Expose tasks via the extension for external access
@@ -183,9 +183,9 @@ class NexusReleasePlugin implements Plugin<Project> {
 
     private static String parseGithubCoordinates(String remoteUrl) {
         if (!remoteUrl) return null
-        Matcher ssh = Pattern.compile('^git@github\\.com:(.+?)(?:\\.git)?$').matcher(remoteUrl)
+        Matcher ssh = Pattern.compile('^git@[^:]+:(.+?)(?:\\.git)?$').matcher(remoteUrl)
         if (ssh.matches()) return ssh.group(1)
-        Matcher https = Pattern.compile('^https?://github\\.com/(.+?)(?:\\.git)?$').matcher(remoteUrl)
+        Matcher https = Pattern.compile('^https?://[^/]+/(.+?)(?:\\.git)?$').matcher(remoteUrl)
         if (https.matches()) return https.group(1)
         return null
     }

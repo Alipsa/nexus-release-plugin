@@ -225,7 +225,7 @@ class TestFixtures {
     testProjectDir
   }
 
-  static File createGithubProject(String githubApiBaseUrl, String repoSlug) {
+  static File createGithubProject(String githubApiBaseUrl, String repoSlug, String remoteUrl = null) {
     File tempDir = File.createTempDir('nexus-release-plugin')
     File testProjectDir = new File(tempDir, 'github-project')
     testProjectDir.mkdirs()
@@ -248,8 +248,40 @@ class TestFixtures {
 
     createGroovySource(testProjectDir, 'Example.groovy', 'class Example {}')
 
+    String origin = remoteUrl ?: "https://github.com/${repoSlug}.git"
     ['git', 'init'].execute(null, testProjectDir).waitFor()
-    ['git', 'remote', 'add', 'origin', "https://github.com/${repoSlug}.git"].execute(null, testProjectDir).waitFor()
+    ['git', 'remote', 'add', 'origin', origin].execute(null, testProjectDir).waitFor()
+
+    testProjectDir
+  }
+
+  static File createGithubProjectWithExplicitRepo(String githubApiBaseUrl, String repoSlug) {
+    File tempDir = File.createTempDir('nexus-release-plugin')
+    File testProjectDir = new File(tempDir, 'github-explicit-project')
+    testProjectDir.mkdirs()
+
+    writeFile(new File(testProjectDir, 'settings.gradle'), "rootProject.name = 'github-explicit-project'")
+
+    writeFile(new File(testProjectDir, 'build.gradle'), """
+      plugins {
+        id 'groovy'
+        id 'se.alipsa.nexus-release-plugin'
+      }
+      group = 'com.example'
+      version = '1.0.0'
+      repositories { mavenCentral() }
+      dependencies { implementation localGroovy() }
+      nexusReleasePlugin {
+        githubApiBaseUrl = '${githubApiBaseUrl.replaceAll('/+$', '')}'
+        githubRepo = '${repoSlug}'
+      }
+    """.stripIndent())
+
+    createGroovySource(testProjectDir, 'Example.groovy', 'class Example {}')
+
+    // Non-GitHub remote — auto-detection would return null without the explicit override
+    ['git', 'init'].execute(null, testProjectDir).waitFor()
+    ['git', 'remote', 'add', 'origin', "https://gitlab.com/${repoSlug}.git"].execute(null, testProjectDir).waitFor()
 
     testProjectDir
   }

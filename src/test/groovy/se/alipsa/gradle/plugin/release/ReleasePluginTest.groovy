@@ -335,6 +335,55 @@ base {
     }
   }
 
+  @Test
+  void latestGithubReleaseWorksWithEnterpriseRemote() throws IOException {
+    String repoSlug = 'owner/enterprise-repo'
+    String expectedTag = 'v3.1.0'
+    server.setDispatcher(new GithubReleaseDispatcher(repoSlug, expectedTag))
+
+    String githubApiBaseUrl = server.url('/').toString()
+    String enterpriseRemote = "https://github.example.com/${repoSlug}.git"
+    File testProjectDir = TestFixtures.createGithubProject(githubApiBaseUrl, repoSlug, enterpriseRemote)
+    try {
+      BuildResult result = GradleRunner.create()
+          .withProjectDir(testProjectDir)
+          .withArguments('latestGithubRelease')
+          .withPluginClasspath()
+          .forwardOutput()
+          .build()
+
+      assertEquals(TaskOutcome.SUCCESS, result.task(':latestGithubRelease').outcome)
+      assertTrue(result.output.contains("${repoSlug}: ${expectedTag}"),
+          "Expected output to contain '${repoSlug}: ${expectedTag}' but was:\n${result.output}")
+    } finally {
+      cleanupTestProject(testProjectDir)
+    }
+  }
+
+  @Test
+  void latestGithubReleaseUsesExplicitGithubRepoWhenSet() throws IOException {
+    String repoSlug = 'owner/explicit-repo'
+    String expectedTag = 'v4.0.0'
+    server.setDispatcher(new GithubReleaseDispatcher(repoSlug, expectedTag))
+
+    String githubApiBaseUrl = server.url('/').toString()
+    File testProjectDir = TestFixtures.createGithubProjectWithExplicitRepo(githubApiBaseUrl, repoSlug)
+    try {
+      BuildResult result = GradleRunner.create()
+          .withProjectDir(testProjectDir)
+          .withArguments('latestGithubRelease')
+          .withPluginClasspath()
+          .forwardOutput()
+          .build()
+
+      assertEquals(TaskOutcome.SUCCESS, result.task(':latestGithubRelease').outcome)
+      assertTrue(result.output.contains("${repoSlug}: ${expectedTag}"),
+          "Expected output to contain '${repoSlug}: ${expectedTag}' but was:\n${result.output}")
+    } finally {
+      cleanupTestProject(testProjectDir)
+    }
+  }
+
   private static final class GithubReleaseDispatcher extends Dispatcher {
     private final String repoSlug
     private final String tagName
