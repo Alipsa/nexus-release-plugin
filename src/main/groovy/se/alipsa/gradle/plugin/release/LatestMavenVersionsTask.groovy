@@ -44,12 +44,12 @@ abstract class LatestMavenVersionsTask extends DefaultTask {
                 if (latest) {
                     logger.quiet("${module.displayName}: ${module.groupId}:${module.artifactId}:${latest}")
                 } else {
-                    logger.quiet("${module.displayName}: no release version found")
+                    logger.quiet("${module.displayName}: no release version found (${module.groupId}:${module.artifactId})")
                 }
             } catch (FileNotFoundException ignored) {
-                logger.quiet("${module.displayName}: not found in metadata repository")
+                logger.quiet("${module.displayName}: not found in metadata repository (${module.groupId}:${module.artifactId})")
             } catch (Exception e) {
-                logger.quiet("${module.displayName}: error querying metadata repository (${e.message})")
+                logger.quiet("${module.displayName}: error querying metadata repository for ${module.groupId}:${module.artifactId} (${e.message})")
             }
         }
     }

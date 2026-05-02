@@ -7,6 +7,9 @@ import org.gradle.api.publish.PublishingExtension
 import org.gradle.api.publish.maven.MavenPublication
 import org.gradle.api.tasks.TaskProvider
 
+import java.util.regex.Matcher
+import java.util.regex.Pattern
+
 /**
  * This plugin is an alternative to the nexus publish plugin which for some of
  * my more complex projects did not do what I wanted it to do.
@@ -74,10 +77,19 @@ class NexusReleasePlugin implements Plugin<Project> {
             })
         }
 
+        TaskProvider<LatestGithubReleaseTask> latestGithubReleaseTask = project.tasks.register('latestGithubRelease', LatestGithubReleaseTask) { LatestGithubReleaseTask task ->
+            task.githubApiBaseUrl.set(extension.githubApiBaseUrl)
+            task.githubToken.set(extension.githubToken)
+            task.repoCoordinates.set(project.provider {
+                detectGithubRepo(project.rootProject.projectDir)
+            })
+        }
+
         // Expose tasks via the extension for external access
         extension.bundleTask = bundleTask
         extension.releaseTask = releaseTask
         extension.latestMavenVersionsTask = latestMavenVersionsTask
+        extension.latestGithubReleaseTask = latestGithubReleaseTask
     }
 
     private static List<String> collectPublishedModules(Project currentProject) {
@@ -108,6 +120,74 @@ class NexusReleasePlugin implements Plugin<Project> {
 
         String displayName = candidate == candidate.rootProject ? candidate.name : candidate.path
         "${displayName}\t${groupId}\t${artifactId}"
+    }
+
+    private static String detectGithubRepo(File projectDir) {
+        String originUrl = findOriginUrl(projectDir)
+        return originUrl ? parseGithubCoordinates(originUrl) : null
+    }
+
+    private static String findOriginUrl(File startDir) {
+        File dir = startDir
+        while (dir != null) {
+            File git = new File(dir, '.git')
+            if (git.exists()) {
+                String url = readOriginUrl(git)
+                if (url) return url
+            }
+            dir = dir.parentFile
+        }
+        return null
+    }
+
+    private static String readOriginUrl(File git) {
+        try {
+            File configFile
+            if (git.isDirectory()) {
+                configFile = new File(git, 'config')
+            } else if (git.isFile()) {
+                // Worktree: .git is a file containing "gitdir: /path/to/.git/worktrees/branch"
+                String ref = git.text.trim()
+                if (!ref.startsWith('gitdir:')) return null
+                File worktreeGitDir = new File(ref.substring('gitdir:'.length()).trim())
+                File commondirFile = new File(worktreeGitDir, 'commondir')
+                if (!commondirFile.exists()) return null
+                String commonPath = commondirFile.text.trim()
+                File commonDirFile = new File(commonPath)
+                File commonDir = commonDirFile.isAbsolute() ? commonDirFile : new File(worktreeGitDir, commonPath)
+                configFile = new File(commonDir, 'config')
+            } else {
+                return null
+            }
+            if (!configFile?.exists()) return null
+            return parseOriginUrlFromConfig(configFile.text)
+        } catch (IOException ignored) {
+            return null
+        }
+    }
+
+    private static String parseOriginUrlFromConfig(String config) {
+        boolean inOriginSection = false
+        for (String line : config.split('\n')) {
+            String trimmed = line.trim()
+            if (trimmed == '[remote "origin"]') {
+                inOriginSection = true
+            } else if (trimmed.startsWith('[')) {
+                inOriginSection = false
+            } else if (inOriginSection && trimmed.startsWith('url =')) {
+                return trimmed.substring(trimmed.indexOf('=') + 1).trim()
+            }
+        }
+        return null
+    }
+
+    private static String parseGithubCoordinates(String remoteUrl) {
+        if (!remoteUrl) return null
+        Matcher ssh = Pattern.compile('^git@github\\.com:(.+?)(?:\\.git)?$').matcher(remoteUrl)
+        if (ssh.matches()) return ssh.group(1)
+        Matcher https = Pattern.compile('^https?://github\\.com/(.+?)(?:\\.git)?$').matcher(remoteUrl)
+        if (https.matches()) return https.group(1)
+        return null
     }
 
     private static MavenPublication publicationFor(Project candidate) {

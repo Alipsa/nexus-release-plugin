@@ -276,6 +276,90 @@ base {
     }
   }
 
+  @Test
+  void latestGithubReleaseDisplaysLatestTag() throws IOException {
+    String repoSlug = 'owner/test-repo'
+    String expectedTag = 'v2.5.0'
+    server.setDispatcher(new GithubReleaseDispatcher(repoSlug, expectedTag))
+
+    String githubApiBaseUrl = server.url('/').toString()
+    File testProjectDir = TestFixtures.createGithubProject(githubApiBaseUrl, repoSlug)
+    try {
+      BuildResult firstRun = GradleRunner.create()
+          .withProjectDir(testProjectDir)
+          .withArguments('latestGithubRelease', '--configuration-cache')
+          .withPluginClasspath()
+          .forwardOutput()
+          .build()
+
+      assertEquals(TaskOutcome.SUCCESS, firstRun.task(':latestGithubRelease').outcome)
+      assertTrue(firstRun.output.contains("${repoSlug}: ${expectedTag}"),
+          "Expected output to contain '${repoSlug}: ${expectedTag}' but was:\n${firstRun.output}")
+      assertTrue(firstRun.output.contains('Configuration cache entry stored'))
+
+      BuildResult secondRun = GradleRunner.create()
+          .withProjectDir(testProjectDir)
+          .withArguments('latestGithubRelease', '--configuration-cache')
+          .withPluginClasspath()
+          .forwardOutput()
+          .build()
+
+      assertEquals(TaskOutcome.SUCCESS, secondRun.task(':latestGithubRelease').outcome)
+      assertTrue(secondRun.output.contains('Configuration cache entry reused') ||
+          secondRun.output.contains('Reusing configuration cache'))
+    } finally {
+      cleanupTestProject(testProjectDir)
+    }
+  }
+
+  @Test
+  void latestGithubReleaseReportsNoReleasesWhenNoneFound() throws IOException {
+    String repoSlug = 'owner/no-releases-repo'
+    server.setDispatcher(new GithubReleaseDispatcher(repoSlug, null))
+
+    String githubApiBaseUrl = server.url('/').toString()
+    File testProjectDir = TestFixtures.createGithubProject(githubApiBaseUrl, repoSlug)
+    try {
+      BuildResult result = GradleRunner.create()
+          .withProjectDir(testProjectDir)
+          .withArguments('latestGithubRelease')
+          .withPluginClasspath()
+          .forwardOutput()
+          .build()
+
+      assertEquals(TaskOutcome.SUCCESS, result.task(':latestGithubRelease').outcome)
+      assertTrue(result.output.contains("${repoSlug}: no releases found"),
+          "Expected output to contain '${repoSlug}: no releases found' but was:\n${result.output}")
+    } finally {
+      cleanupTestProject(testProjectDir)
+    }
+  }
+
+  private static final class GithubReleaseDispatcher extends Dispatcher {
+    private final String repoSlug
+    private final String tagName
+
+    GithubReleaseDispatcher(String repoSlug, String tagName) {
+      this.repoSlug = repoSlug
+      this.tagName = tagName
+    }
+
+    @Override
+    MockResponse dispatch(RecordedRequest request) {
+      String expectedPath = "/repos/${repoSlug}/releases/latest"
+      if (request.path?.startsWith(expectedPath)) {
+        if (tagName == null) {
+          return new MockResponse().setResponseCode(404).setBody('{"message":"Not Found"}')
+        }
+        return new MockResponse()
+            .setResponseCode(200)
+            .addHeader('Content-Type', 'application/json')
+            .setBody("""{"tag_name":"${tagName}","name":"Release ${tagName}"}""")
+      }
+      return new MockResponse().setResponseCode(404)
+    }
+  }
+
   private static final class MetadataDispatcher extends Dispatcher {
     private final Map<String, String> versionsByArtifact
 

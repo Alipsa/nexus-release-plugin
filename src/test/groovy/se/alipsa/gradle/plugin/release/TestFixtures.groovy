@@ -225,6 +225,35 @@ class TestFixtures {
     testProjectDir
   }
 
+  static File createGithubProject(String githubApiBaseUrl, String repoSlug) {
+    File tempDir = File.createTempDir('nexus-release-plugin')
+    File testProjectDir = new File(tempDir, 'github-project')
+    testProjectDir.mkdirs()
+
+    writeFile(new File(testProjectDir, 'settings.gradle'), "rootProject.name = 'github-project'")
+
+    writeFile(new File(testProjectDir, 'build.gradle'), """
+      plugins {
+        id 'groovy'
+        id 'se.alipsa.nexus-release-plugin'
+      }
+      group = 'com.example'
+      version = '1.0.0'
+      repositories { mavenCentral() }
+      dependencies { implementation localGroovy() }
+      nexusReleasePlugin {
+        githubApiBaseUrl = '${githubApiBaseUrl.replaceAll('/+$', '')}'
+      }
+    """.stripIndent())
+
+    createGroovySource(testProjectDir, 'Example.groovy', 'class Example {}')
+
+    ['git', 'init'].execute(null, testProjectDir).waitFor()
+    ['git', 'remote', 'add', 'origin', "https://github.com/${repoSlug}.git"].execute(null, testProjectDir).waitFor()
+
+    testProjectDir
+  }
+
   private static void createGroovySource(File projectDir, String fileName, String content) {
     File srcDir = new File(projectDir, 'src/main/groovy/example')
     srcDir.mkdirs()
