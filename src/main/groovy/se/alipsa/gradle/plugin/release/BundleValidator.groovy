@@ -89,6 +89,11 @@ class BundleValidator {
         }
 
         String pomText = zip.getInputStream(pomEntry).getText('UTF-8')
+        validatePomMetadata(pomText, expectedPomPath, errors)
+    }
+
+    /** Checks Central metadata for both single-publication and combined archives. */
+    static void validatePomMetadata(String pomText, String expectedPomPath, List<String> errors) {
         GPathResult pom
         try {
             pom = new XmlSlurper(false, false).parseText(pomText)
