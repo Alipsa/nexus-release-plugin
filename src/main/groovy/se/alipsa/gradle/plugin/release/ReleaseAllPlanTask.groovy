@@ -53,7 +53,7 @@ abstract class ReleaseAllPlanTask extends DefaultTask {
             def publication = new PublicationDescriptor(pomFile: pomPath,
                 coordinate: new ReleaseCoordinate(parsed.groupId, parsed.artifactId, parsed.version), packaging: parsed.packaging,
                 role: parsed.is(bom) ? 'bom' : 'aggregate', sourcesAndJavadocRequired: false,
-                dependencies: (parsed.dependencies + parsed.management).findAll { it.version },
+                dependencies: (parsed.dependencies.findAll { it.scope != 'test' } + parsed.management).findAll { it.version },
                 publishedDependencies: parsed.dependencies.findAll { it.scope != 'test' }, publishedManagement: parsed.is(bom) ? parsed.management : [], files: ["${prefix}.pom".toString()])
             if (parsed.packaging == 'jar') publication.files.add("${prefix}.jar".toString())
             candidates.add(publication)

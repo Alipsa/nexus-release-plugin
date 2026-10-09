@@ -33,9 +33,11 @@ class CombinedTasksTest {
             ['matrix-bom', 'matrix-all'].each { name ->
                 String packaging = name == 'matrix-bom' ? 'pom' : 'jar'
                 String xml = """<project><groupId>g</groupId><artifactId>${name}</artifactId><version>1</version><packaging>${packaging}</packaging><name>Test</name><description>Test</description><url>https://example.org</url><licenses><license><name>MIT</name><url>https://example.org</url></license></licenses><developers><developer><name>Test</name></developer></developers><scm><url>https://example.org</url><connection>scm:git:example</connection></scm></project>"""
+                String testOnly = name == 'matrix-all' ? '<dependencies><dependency><groupId>g</groupId><artifactId>test-only</artifactId><version>1-SNAPSHOT</version><scope>test</scope></dependency></dependencies>' : ''
+                xml = xml.replace('</project>', testOnly + '</project>')
                 new File(root, name + '.xml').text = xml
                 File staged = new File(root, "build/staging/g/${name}/1"); staged.mkdirs()
-                new File(staged, "${name}-1.pom").text = xml
+                new File(staged, "${name}-1.pom").text = testOnly ? xml.replace(testOnly, '') : xml
                 new File(staged, "${name}-1.pom.asc").text = 'signature'
                 if (packaging == 'jar') {
                     new File(staged, "${name}-1.jar").text = 'jar'
@@ -84,6 +86,7 @@ releaseAllPrepareMaven {
             assertTrue(run('releaseAllPlan').output.contains('Reusing configuration cache'))
             assertEquals(2, ReleaseManifest.read(new File(root, 'build/manifest.json')).selected.size())
             assertEquals(['matrix-bom.xml', 'matrix-all.xml'], ReleaseManifest.read(new File(root, 'build/manifest.json')).selected*.pomFile)
+            assertFalse(ReleaseManifest.read(new File(root, 'build/manifest.json')).selected.find { it.artifactId == 'matrix-all' }.dependencies.any { it.scope == 'test' })
             run('bundleAll')
             assertTrue(run('bundleAll').output.contains('Reusing configuration cache'))
             assertTrue(new File(root, 'build/bundle.zip').isFile())
