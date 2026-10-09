@@ -13,6 +13,7 @@ import org.gradle.work.DisableCachingByDefault
 abstract class ReleaseAllPlanTask extends DefaultTask {
     @Input abstract Property<String> getCandidatesJson()
     @Input abstract Property<String> getConfiguredRevision()
+    @Input abstract org.gradle.api.provider.ListProperty<String> getReleaseNamespaces()
     @Internal abstract DirectoryProperty getSourceDirectory()
     @InputFile @PathSensitive(PathSensitivity.RELATIVE) abstract RegularFileProperty getBomPom()
     @InputFile @PathSensitive(PathSensitivity.RELATIVE) abstract RegularFileProperty getAllPom()
@@ -35,11 +36,16 @@ abstract class ReleaseAllPlanTask extends DefaultTask {
         if (ReleaseManifest.git(root, 'status', '--porcelain')) throw new IllegalStateException('Release planning requires a clean Git working tree')
         List<PublicationDescriptor> candidates = []
         new JsonSlurper().parseText(candidatesJson.get()).each { Map registered ->
+            if (!(registered.files instanceof List) || registered.files.empty) {
+                throw new IllegalArgumentException("Candidate ${registered.projectPath ?: registered.artifactId} must declare a nonempty files list")
+            }
             Map parsed = ReleasePom.read(new File(root, registered.pomFile))
             def publication = new PublicationDescriptor(projectPath: registered.projectPath, publication: registered.publication,
                 pomFile: registered.pomFile, coordinate: new ReleaseCoordinate(registered.groupId, registered.artifactId, registered.version),
-                dependencies: registered.dependencies + (parsed.dependencies + parsed.management).findAll { it.version },
-                publishedDependencies: parsed.dependencies, publishedManagement: parsed.management, files: registered.files)
+                packaging: registered.packaging ?: parsed.packaging,
+                sourcesAndJavadocRequired: registered.sourcesAndJavadocRequired != false,
+                dependencies: (registered.dependencies ?: []) + (parsed.dependencies + parsed.management),
+                publishedDependencies: parsed.dependencies, publishedManagement: parsed.management, files: registered.files ?: [])
             candidates.add(publication)
         }
         Map bom = ReleasePom.read(bomPom.get().asFile)
@@ -53,10 +59,18 @@ abstract class ReleaseAllPlanTask extends DefaultTask {
             def publication = new PublicationDescriptor(pomFile: pomPath,
                 coordinate: new ReleaseCoordinate(parsed.groupId, parsed.artifactId, parsed.version), packaging: parsed.packaging,
                 role: parsed.is(bom) ? 'bom' : 'aggregate', sourcesAndJavadocRequired: false,
-                dependencies: (parsed.dependencies.findAll { it.scope != 'test' } + parsed.management).findAll { it.version },
+                dependencies: (parsed.dependencies.findAll { it.scope != 'test' } + parsed.management),
                 publishedDependencies: parsed.dependencies.findAll { it.scope != 'test' }, publishedManagement: parsed.is(bom) ? parsed.management : [], files: ["${prefix}.pom".toString()])
             if (parsed.packaging == 'jar') publication.files.add("${prefix}.jar".toString())
             candidates.add(publication)
+        }
+        Set<String> candidateNames = candidates.collect { "${it.coordinate.groupId}:${it.coordinate.artifactId}".toString() } as Set
+        List<String> namespaces = releaseNamespaces.get()
+        candidates.each { PublicationDescriptor publication ->
+            publication.dependencies = publication.dependencies.findAll { Map edge ->
+                !(edge.scope in ['test', 'system']) && (candidateNames.contains("${edge.groupId}:${edge.artifactId}".toString()) ||
+                    namespaces.any { edge.groupId == it || edge.groupId?.startsWith(it + '.') })
+            }
         }
         def status = new PublicationStatus(repositoryUrl: repositoryUrl.get(), portalUrl: portalUrl.get(), userName: userName.getOrElse(''), password: password.getOrElse(''), requireFixture: true, fixtureFile: portalFixture.get().asFile)
         List<String> warnings = []
@@ -71,9 +85,11 @@ abstract class ReleaseAllPlanTask extends DefaultTask {
             changed = scope.size() != previous
         }
         Map<String, String> hashes = [:]
-        ReleaseManifest.git(root, 'ls-files').readLines().each { String path ->
+        ReleaseManifest.checkTrackedFlags(root)
+        candidates.collect { it.pomFile }.unique().each { String path ->
             File input = new File(root, path)
-            if (input.isFile()) hashes[path] = ReleaseChecksums.checksum(input, 'SHA-256')
+            if (!input.isFile()) throw new IllegalStateException("Missing publication input: ${path}")
+            hashes[path] = ReleaseChecksums.checksum(input, 'SHA-256')
         }
         Map manifest = [schemaVersion: 1, revision: configuredRevision.get(), hashes: hashes,
             versions: candidates.findAll { it.projectPath }.collectEntries { [it.projectPath, it.coordinate.version] },

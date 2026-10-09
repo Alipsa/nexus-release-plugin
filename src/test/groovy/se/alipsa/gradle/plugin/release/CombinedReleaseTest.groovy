@@ -134,7 +134,8 @@ class CombinedReleaseTest {
             @Override String upload(File file) { uploads++; throw new IOException('Disconnected after server accepted upload') }
         }
         assertThrows(IOException) { CombinedDeployment.submit(record, bundle, manifest, availability, client) }
-        assertEquals('SUBMITTING', ReleaseManifest.read(record).state)
+        assertEquals('UPLOAD_ERROR', ReleaseManifest.read(record).state)
+        assertTrue(ReleaseManifest.read(record).error.contains('Disconnected'))
         assertThrows(IllegalStateException) { CombinedDeployment.submit(record, bundle, manifest, availability, client) }
         assertEquals(1, uploads)
     }
@@ -220,6 +221,104 @@ class CombinedReleaseTest {
             assertEquals(1, uploads.get())
             assertEquals('saved-id', ReleaseManifest.read(record).deploymentId)
         } finally { executor.shutdownNow() }
+    }
+
+    @Test void rangesExcludeOnlyReleaseDependents() {
+        def bad = candidate('bad', '1')
+        bad.dependencies = [[groupId: 'g', artifactId: 'core', version: '[1,2)', origin: 'pom.dependencies']]
+        def good = candidate('good', '1')
+        assertEquals([good], ReleasePlanner.select([bad, good], { false }))
+        assertTrue(bad.reasons.first().contains('Invalid release dependency'))
+        File pom = new File(directory, 'range.pom')
+        pom.text = pomText('good', 'jar').replace('</project>', '<dependencies><dependency><groupId>third.party</groupId><artifactId>a</artifactId><version>[1,2)</version></dependency></dependencies></project>')
+        assertEquals('[1,2)', ReleasePom.read(pom).dependencies.first().version)
+    }
+
+    @Test void nonAsciiIndexFlagsCannotHideChanges() {
+        File root = new File(directory, 'unicode'); root.mkdirs()
+        new File(root, 'å.txt').text = 'original'
+        git(root, 'init'); git(root, 'add', '.')
+        git(root, '-c', 'user.name=Test', '-c', 'user.email=test@example.org', 'commit', '-m', 'Fixture')
+        assertTrue(ReleaseManifest.gitOutput(root, 'ls-files', '-z').contains('å.txt'))
+        Map manifest = [revision: ReleaseManifest.git(root, 'rev-parse', 'HEAD'), hashes: [:]]
+        ReleaseManifest.guard(root, manifest)
+        ['assume-unchanged', 'skip-worktree'].each { flag ->
+            git(root, 'update-index', '--' + flag, 'å.txt')
+            def failure = assertThrows(IllegalStateException) { ReleaseManifest.guard(root, manifest) }
+            assertTrue(failure.message.contains('å.txt'))
+            git(root, 'update-index', '--no-' + flag, 'å.txt')
+        }
+    }
+
+    @Test void definiteUploadRejectionsAreArchivedAndPermitCorrectedSubmission() {
+        File bundle = new File(directory, 'bundle.zip'); bundle.text = 'bundle'
+        Map manifest = [selected: []]
+        def availability = new PublicationStatus()
+        [401, 403, 422].each { int code ->
+            File record = new File(directory, "deployment-${code}.json")
+            def client = new CentralPortalClient(org.gradle.api.logging.Logging.getLogger(CombinedReleaseTest), null, 'u', 'p') {
+                @Override String upload(File file) { throw new org.gradle.api.GradleException('rejected', new WsException(code, 'details')) }
+            }
+            assertThrows(org.gradle.api.GradleException) { CombinedDeployment.submit(record, bundle, manifest, availability, client) }
+            assertFalse(record.exists())
+            File archived = directory.listFiles().find { it.name.startsWith(record.name + '.rejected-') }
+            assertEquals('UPLOAD_REJECTED', ReleaseManifest.read(archived).state)
+            assertEquals('details', ReleaseManifest.read(archived).rawResponse)
+            def corrected = new CentralPortalClient(org.gradle.api.logging.Logging.getLogger(CombinedReleaseTest), null, 'u', 'p') {
+                @Override String upload(File file) { 'corrected-id' }
+            }
+            assertEquals('corrected-id', CombinedDeployment.submit(record, bundle, manifest, availability, corrected).deploymentId)
+        }
+    }
+
+    @Test void invalidUploadIdRetainsResponseAndBlocksResubmission() {
+        File bundle = new File(directory, 'bundle.zip'); bundle.text = 'bundle'
+        File record = new File(directory, 'deployment.json')
+        def client = new CentralPortalClient(org.gradle.api.logging.Logging.getLogger(CombinedReleaseTest), null, 'u', 'p') {
+            @Override String upload(File file) { '<html>unexpected response</html>' }
+        }
+        assertThrows(IllegalStateException) { CombinedDeployment.submit(record, bundle, [selected: []], new PublicationStatus(), client) }
+        assertEquals('<html>unexpected response</html>', ReleaseManifest.read(record).rawResponse)
+        assertThrows(IllegalStateException) { CombinedDeployment.submit(record, bundle, [selected: []], new PublicationStatus(), client) }
+    }
+
+    @Test void pollingSurvivesStatusAndPropagationIoErrors() {
+        File record = new File(directory, 'deployment.json')
+        ReleaseManifest.write(record, [deploymentId: 'id', state: 'UPLOADED', manifest: [selected: []]])
+        int polls = 0
+        int probes = 0
+        def client = new CentralPortalClient(org.gradle.api.logging.Logging.getLogger(CombinedReleaseTest), null, 'u', 'p') {
+            @Override Map<String, Object> getDeploymentStatus(String id) {
+                if (++polls == 1) throw new WsException(503, 'temporary')
+                [deploymentState: 'PUBLISHED']
+            }
+        }
+        CombinedDeployment.resume(record, 'id', client, {
+            if (++probes == 1) throw new IOException('temporary propagation error')
+            true
+        }, 3, 0)
+        assertEquals(3, polls)
+        assertEquals('AVAILABLE', ReleaseManifest.read(record).state)
+    }
+
+    @Test void availabilityRetriesPreserveIoCause() {
+        def socket = new ServerSocket(0)
+        int port = socket.localPort
+        socket.close()
+        def status = new PublicationStatus(repositoryUrl: "http://127.0.0.1:${port}", attempts: 1)
+        def failure = assertThrows(IOException) { status.published(new ReleaseCoordinate('g', 'a', '1')) }
+        assertTrue(failure.cause instanceof IOException)
+    }
+
+    @Test void combinedTaskDefaultsArePresent() {
+        def project = org.gradle.testfixtures.ProjectBuilder.builder().withProjectDir(directory).build()
+        project.pluginManager.apply(ReleaseAllSupportPlugin)
+        def release = project.tasks.getByName('releaseAll')
+        assertEquals('', release.resumeId.get())
+        assertEquals('https://repo.maven.apache.org/maven2', release.repositoryUrl.get())
+        assertEquals(CentralPortalClient.CENTRAL_PORTAL_URL, release.portalUrl.get())
+        assertEquals([], project.tasks.getByName('releaseAllPlan').releaseNamespaces.get())
+        assertEquals('release-staging', project.tasks.getByName('releaseAllPrepareMaven').stagingRepositoryId.get())
     }
 
     private static void git(File root, String... args) {

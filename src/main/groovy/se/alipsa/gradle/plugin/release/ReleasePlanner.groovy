@@ -22,7 +22,12 @@ class ReleasePlanner {
             selected.each { PublicationDescriptor p ->
                 p.dependencies.each { Map<String, String> edge ->
                     def dependency = new ReleaseCoordinate(edge.groupId, edge.artifactId, edge.version)
-                    dependency.validate()
+                    try { dependency.validate() }
+                    catch (IllegalArgumentException invalid) {
+                        p.reasons.add("Invalid release dependency: ${dependency.key()} (${edge.origin}): ${invalid.message}")
+                        changed = true
+                        return
+                    }
                     String reason
                     if (dependency.version.endsWith('-SNAPSHOT')) reason = 'SNAPSHOT dependency'
                     else if (!keys.contains(dependency.key()) && !lookup(dependency)) reason = 'Unavailable dependency'

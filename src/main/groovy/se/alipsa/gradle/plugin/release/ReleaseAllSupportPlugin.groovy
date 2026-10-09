@@ -10,8 +10,18 @@ class ReleaseAllSupportPlugin implements Plugin<Project> {
         project.tasks.register('releaseAllSigningCheck', SigningPreflightTask)
         project.tasks.register('releaseAllGuard', ReleaseSourceGuardTask)
         project.tasks.register('bundleAll', BundleAllTask)
-        project.tasks.register('releaseAll', ReleaseAllTask)
-        project.tasks.register('releaseAllPlan', ReleaseAllPlanTask)
-        project.tasks.register('releaseAllPrepareMaven', PrepareMavenTask)
+        project.tasks.register('releaseAll', ReleaseAllTask) {
+            resumeId.convention('')
+            repositoryUrl.convention('https://repo.maven.apache.org/maven2')
+            portalUrl.convention(CentralPortalClient.CENTRAL_PORTAL_URL)
+        }
+        project.tasks.register('releaseAllPlan', ReleaseAllPlanTask) {
+            releaseNamespaces.convention([])
+            repositoryUrl.convention('https://repo.maven.apache.org/maven2')
+            portalUrl.convention(CentralPortalClient.CENTRAL_PORTAL_URL)
+        }
+        project.tasks.register('releaseAllPrepareMaven', PrepareMavenTask) {
+            stagingRepositoryId.convention('release-staging')
+        }
     }
 }

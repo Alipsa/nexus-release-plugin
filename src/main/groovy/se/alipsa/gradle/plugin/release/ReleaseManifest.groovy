@@ -6,11 +6,22 @@ import groovy.json.JsonSlurper
 /** Source guards and atomic, credential-free release records. */
 class ReleaseManifest {
     /** Runs git without shell interpretation. */
-    static String git(File root, String... arguments) {
+    static String git(File root, String... arguments) { gitOutput(root, arguments).trim() }
+
+    static String gitOutput(File root, String... arguments) {
         Process process = new ProcessBuilder(['git', '-C', root.absolutePath] + arguments.toList()).redirectErrorStream(true).start()
-        String output = process.inputStream.getText('UTF-8').trim()
+        String output = process.inputStream.getText('UTF-8')
         if (process.waitFor() != 0) throw new IllegalStateException('Git source validation failed')
         output
+    }
+
+    /** Rejects index flags that can hide working-tree changes, preserving arbitrary filenames. */
+    static void checkTrackedFlags(File root) {
+        gitOutput(root, 'ls-files', '-v', '-z').split('\u0000').each { String entry ->
+            if (entry && (Character.isLowerCase(entry.charAt(0)) || entry.charAt(0) == ('S' as char))) {
+                throw new IllegalStateException("Source guard requires clearing assume-unchanged/skip-worktree: ${entry.substring(2)}")
+            }
+        }
     }
 
     /** Checks revision, cleanliness, input hashes and effective publication versions. */
@@ -22,6 +33,7 @@ class ReleaseManifest {
         if (git(root, 'rev-parse', 'HEAD') != manifest.revision || git(root, 'status', '--porcelain')) {
             throw new IllegalStateException('Stale manifest: HEAD changed or working tree is dirty')
         }
+        checkTrackedFlags(root)
         manifest.hashes.each { String path, String hash ->
             File source = new File(root, path)
             if (!source.isFile() || ReleaseChecksums.checksum(source, 'SHA-256') != hash) throw new IllegalStateException("Stale manifest input: ${path}")

@@ -55,8 +55,8 @@ class PublicationStatus {
             try {
                 def response = client.send(builder.build(), HttpResponse.BodyHandlers.ofString())
                 if (!(response.statusCode() in [429, 500, 502, 503, 504]) || attempt == attempts) return response
-            } catch (IOException ignored) {
-                if (attempt == attempts) throw new IOException('Availability request failed after bounded retries')
+            } catch (IOException failure) {
+                if (attempt == attempts) throw new IOException('Availability request failed after bounded retries', failure)
             }
             Thread.sleep(250L * attempt)
         }

@@ -24,7 +24,6 @@ class ReleasePom {
                 String groupId = resolve(node.groupId.text())
                 String artifactId = resolve(node.artifactId.text())
                 String version = resolve(node.version.text() ?: managed["${groupId}:${artifactId}"] ?: '')
-                if (version || groupId.startsWith('se.alipsa.matrix')) new ReleaseCoordinate(groupId, artifactId, version).validate()
                 [groupId: groupId, artifactId: artifactId, version: version,
                  scope: resolve(node.scope.text() ?: 'compile'), type: resolve(node.type.text() ?: 'jar'),
                  classifier: resolve(node.classifier.text()), origin: origin]

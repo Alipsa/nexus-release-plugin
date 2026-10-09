@@ -43,6 +43,7 @@ abstract class ReleaseAllTask extends DefaultTask {
                 def coordinate = new ReleaseCoordinate(p.groupId, p.artifactId, p.version)
                 p.files.findAll { it.endsWith('.pom') || it == "${p.artifactId}-${p.version}.jar" }.every { String name ->
                     def connection = URI.create("${repositoryUrl.get()}/${coordinate.path()}/${name}").toURL().openConnection()
+                    connection.requestMethod = 'HEAD'
                     connection.connectTimeout = 15000; connection.readTimeout = 15000
                     try { connection.responseCode == 200 } finally { connection.disconnect() }
                 }
