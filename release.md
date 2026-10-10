@@ -1,6 +1,22 @@
 # Release history
 
 ## Ver 2.3.0, in progress
+
+- Fix: Central Portal requests through `WsClient`/`CentralPortalClient` now have connect timeouts and an overall
+  caller deadline, covering uploads and deployment status checks for `release` and `releaseAll`, including responses that stall after headers.
+  New properties `httpConnectTimeoutSeconds` (default 30) and `httpRequestTimeoutSeconds` (default 1800), each
+  1–86400 seconds. Status and other small calls through this client use the shorter of 60 seconds and the configured
+  request timeout; uploads use the full configured timeout. `releaseAll` uses the default timeouts; the new properties
+  apply only to `release`. Separate `PublicationStatus` and `ReleaseAllTask` HEAD availability checks are unchanged
+  and do not receive the new overall deadline.
+  `WsClient` now uses `java.net.http.HttpClient`; header names in its result map are lower-case, with no null status-line key.
+- Fix: `release` status polling now tolerates transient errors (5xx, 429, timeouts, malformed responses) instead of
+  failing a deployment that was uploaded successfully; 401/403 still fail immediately. The number of status checks is
+  unchanged: one initial check plus up to `statusCheckRetries` further checks.
+- Fix: when status polling times out, the error now says the deployment may still publish and how to check it,
+  instead of reporting "Failed to release". Replaced the obsolete "staging profile id" error message.
+- Fix: a missing signature no longer stops later `.asc` files (including the POM signature) from being added to the bundle.
+
 - Dependency updates:
   - com.github.ben-manes.versions:com.github.ben-manes.versions.gradle.plugin [0.53.0 -> 0.54.0]
   - com.gradle.plugin-publish:com.gradle.plugin-publish.gradle.plugin [2.1.0 -> 2.1.1]

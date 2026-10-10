@@ -137,10 +137,13 @@ afterEvaluate {
   }
 }
 
+def selectedTestJavaVersion = providers.gradleProperty('testJavaVersion').getOrElse('17')
 test {
   useJUnitPlatform()
+  javaLauncher = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(selectedTestJavaVersion) }
+  systemProperty 'testJavaVersion', selectedTestJavaVersion
   // Parallelize at JVM-fork level to keep TestKit tests isolated per process.
-  maxParallelForks = Math.max(1, (Runtime.runtime.availableProcessors().intdiv(2)))
+  maxParallelForks = 2
   // Pass system properties from command line to tests
   systemProperty 'testGradleVersion', findProperty('testGradleVersion') ?: ''
 }

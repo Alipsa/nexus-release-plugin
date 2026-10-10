@@ -111,7 +111,7 @@ abstract class BundleTask extends DefaultTask {
                 zipOut << file.bytes
                 zipOut.closeEntry()
 
-                missingFilesDetected = missingFilesDetected || addFileToZip(file, ".asc", mavenPathPrefix, zipOut)
+                missingFilesDetected = addFileToZip(file, ".asc", mavenPathPrefix, zipOut) || missingFilesDetected
                 CHECKSUM_ALGOS.each { String algo ->
                     addChecksumToZip(file, algo, "${mavenPathPrefix}${file.name}.${checksumExtension(algo)}", zipOut)
                 }
@@ -126,7 +126,7 @@ abstract class BundleTask extends DefaultTask {
                 zipOut.putNextEntry(new ZipEntry(pomEntryName))
                 zipOut << pomFile.bytes
                 zipOut.closeEntry()
-                missingFilesDetected = missingFilesDetected || addFileToZip(new File(publicationDir, "pom-default.xml.asc"), pomEntryName + ".asc", zipOut)
+                missingFilesDetected = addFileToZip(new File(publicationDir, "pom-default.xml.asc"), pomEntryName + ".asc", zipOut) || missingFilesDetected
                 CHECKSUM_ALGOS.each { String algo ->
                     addChecksumToZip(pomFile, algo, "${pomEntryName}.${checksumExtension(algo)}", zipOut)
                 }

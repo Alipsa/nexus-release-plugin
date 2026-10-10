@@ -58,7 +58,15 @@ abstract class ReleaseTask extends DefaultTask {
     @Input
     abstract Property<Integer> getInitialStatusCheckDelaySeconds()
 
+    @Input
+    abstract Property<Integer> getHttpConnectTimeoutSeconds()
+
+    @Input
+    abstract Property<Integer> getHttpRequestTimeoutSeconds()
+
     ReleaseTask() {
+        httpConnectTimeoutSeconds.convention(30)
+        httpRequestTimeoutSeconds.convention(1800)
         group = 'publishing'
         description = 'Create and upload a release bundle to Nexus'
     }
@@ -91,16 +99,11 @@ abstract class ReleaseTask extends DefaultTask {
         }
 
         String projectNameValue = projectName.get()
-        CentralPortalClient releaseClient = new CentralPortalClient(
-            logger,
-            nexusUrl.get(),
-            userNameValue,
-            passwordValue
-        )
+        CentralPortalClient releaseClient = createClient(userNameValue, passwordValue)
 
         String deploymentId = releaseClient.upload(zipFile)
         if (!deploymentId) {
-            throw new GradleException("Failed to find the staging profile id")
+            throw new GradleException("Central Portal upload returned no deployment id")
         }
 
         int initialDelaySeconds = nonNegative(initialStatusCheckDelaySeconds.get(), 'initialStatusCheckDelaySeconds')
@@ -109,14 +112,25 @@ abstract class ReleaseTask extends DefaultTask {
 
         logger.lifecycle("Project $projectNameValue published with deploymentId = $deploymentId, waiting ${initialDelaySeconds}s before checking...")
         sleepSeconds(initialDelaySeconds)
-        Map<String, Object> status = releaseClient.getDeploymentStatus(deploymentId)
-        String state = releaseClient.getDeploymentState(status)
-
-        while (!['PUBLISHING', 'PUBLISHED', 'FAILED'].contains(state) && retries-- > 0) {
-            logger.lifecycle("Deploy status is $state")
-            sleepSeconds(intervalSeconds)
-            status = releaseClient.getDeploymentStatus(deploymentId)
-            state = releaseClient.getDeploymentState(status)
+        Map<String, Object> status = null
+        String state = null
+        IOException lastError = null
+        int checks = 1 + retries
+        for (int check = 1; check <= checks; check++) {
+            if (check > 1) sleepSeconds(intervalSeconds)
+            lastError = null
+            try {
+                status = releaseClient.getDeploymentStatus(deploymentId)
+                state = releaseClient.getDeploymentState(status)
+            } catch (IOException e) {
+                if (e instanceof WsException && ((WsException) e).statusCode in [401, 403]) {
+                    throw releaseClient.createUploadException((WsException) e)
+                }
+                state = null
+                lastError = e
+                logger.lifecycle("Status check failed (check ${check}/${checks}): ${e.message}")
+            }
+            if (state in ['PUBLISHING', 'PUBLISHED', 'FAILED']) break
         }
         if (state == 'PUBLISHING') {
             logger.lifecycle("Project $projectNameValue uploaded and validated successfully!")
@@ -127,8 +141,14 @@ abstract class ReleaseTask extends DefaultTask {
             logFailedDeployment(status)
             throw new GradleException("Failed to release $projectNameValue with deploymentId $deploymentId")
         } else {
-            throw new GradleException("Failed to release $projectNameValue with deploymentId $deploymentId")
+            throw new GradleException("Deployment ${deploymentId} for ${projectNameValue} is still ${state ?: 'unknown'} after ${checks} status checks. It may still publish; check https://central.sonatype.com/publishing/deployments or increase statusCheckRetries / statusCheckIntervalSeconds." + (lastError ? " Last error: ${lastError.message}" : ''))
         }
+    }
+
+    protected CentralPortalClient createClient(String user, String pass) {
+        new CentralPortalClient(logger, nexusUrl.get(), user, pass,
+            TimeoutSettings.validate('httpConnectTimeoutSeconds', httpConnectTimeoutSeconds.get()),
+            TimeoutSettings.validate('httpRequestTimeoutSeconds', httpRequestTimeoutSeconds.get()))
     }
 
     private static int nonNegative(int value, String propertyName) {

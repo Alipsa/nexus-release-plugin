@@ -155,6 +155,7 @@ class TestFixtures {
     try (PrintWriter writer = new PrintWriter(groovyFile)) {
       writer.println("class Example { static void main(String[] args) { println 'Hello' } }")
     }
+    MatrixRunner.instrument(testProjectDir)
     testProjectDir
   }
 
@@ -222,6 +223,7 @@ class TestFixtures {
     createGroovySource(testProjectDir, 'RootExample.groovy', "class RootExample { }")
     createGroovySource(new File(testProjectDir, 'lib-one'), 'LibOneExample.groovy', "class LibOneExample { }")
     createGroovySource(new File(testProjectDir, 'lib-two'), 'LibTwoExample.groovy', "class LibTwoExample { }")
+    MatrixRunner.instrument(testProjectDir)
     testProjectDir
   }
 
@@ -252,6 +254,7 @@ class TestFixtures {
     ['git', 'init'].execute(null, testProjectDir).waitFor()
     ['git', 'remote', 'add', 'origin', origin].execute(null, testProjectDir).waitFor()
 
+    MatrixRunner.instrument(testProjectDir)
     testProjectDir
   }
 
@@ -283,6 +286,7 @@ class TestFixtures {
     ['git', 'init'].execute(null, testProjectDir).waitFor()
     ['git', 'remote', 'add', 'origin', "https://gitlab.com/${repoSlug}.git"].execute(null, testProjectDir).waitFor()
 
+    MatrixRunner.instrument(testProjectDir)
     testProjectDir
   }
 
@@ -300,6 +304,7 @@ fi
 exit 1
 """
     ghScript.setExecutable(true)
+    MatrixRunner.instrument(testProjectDir)
     testProjectDir
   }
 

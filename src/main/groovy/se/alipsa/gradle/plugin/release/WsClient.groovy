@@ -1,123 +1,100 @@
 package se.alipsa.gradle.plugin.release
 
 import groovy.transform.CompileStatic
-import org.gradle.api.logging.Logger
-import org.gradle.api.logging.Logging
+import java.net.http.HttpClient
+import java.net.http.HttpRequest
+import java.net.http.HttpResponse
+import java.nio.charset.StandardCharsets
+import java.time.Duration
+import java.util.concurrent.ExecutionException
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
 
 @CompileStatic
 abstract class WsClient {
-  static final String APPLICATION_JSON = 'application/json'
-  static final String BODY = 'body'
-  static final String RESPONSE_CODE = 'responseCode'
-  static final String HEADERS = 'headers'
-  private static final Logger LOGGER = Logging.getLogger(WsClient)
+    static final String APPLICATION_JSON = 'application/json'
+    static final String BODY = 'body'
+    static final String RESPONSE_CODE = 'responseCode'
+    static final String HEADERS = 'headers'
+    final HttpClient httpClient
+    final long requestDeadlineMillis
+    final long smallCallCapMillis
 
-  Map<String, Object> get(String urlString, String username, String password) throws IOException {
-    URL url = new URL(urlString)
-    HttpURLConnection conn = (HttpURLConnection) url.openConnection()
-    try {
-      conn.setRequestMethod("GET")
-      conn.setRequestProperty("Accept", APPLICATION_JSON)
-      conn.setRequestProperty("Authorization", auth(username, password))
-      conn.connect()
-      int responseCode = conn.getResponseCode()
-      var responseHeaders = conn.getHeaderFields()
-      ensureSuccess(responseCode, '', conn)
-      String body = readBody(conn.getInputStream())
-      return [(BODY): body, (RESPONSE_CODE): responseCode, (HEADERS): responseHeaders]
-    } finally {
-      conn.disconnect()
+    WsClient(int connectSeconds = 30, int requestSeconds = 1800) {
+        this(Duration.ofSeconds(TimeoutSettings.validate('httpConnectTimeoutSeconds', connectSeconds)),
+            TimeoutSettings.validate('httpRequestTimeoutSeconds', requestSeconds) * 1000L, 60000L)
     }
-  }
 
-  Map<String, Object> post(String urlString, byte[] payload, String username, String password, String contentType=APPLICATION_JSON) throws IOException {
-    URL url = new URL(urlString)
-    HttpURLConnection conn = (HttpURLConnection) url.openConnection()
-    try {
-      conn.setRequestMethod('POST')
-      conn.setRequestProperty('Content-Type', contentType)
-      conn.setRequestProperty("Accept", APPLICATION_JSON)
-      conn.setRequestProperty("Authorization", auth(username, password))
-      conn.setDoOutput(true)
-      conn.connect()
-      if (payload) {
-        OutputStream os = conn.getOutputStream()
-        os.write(payload)
-        os.flush()
-        os.close()
-      }
-      int responseCode = conn.getResponseCode()
-      var responseHeaders = conn.getHeaderFields()
-      ensureSuccess(responseCode, '', conn)
-      String body = readBody(conn.getInputStream())
-      return [(BODY): body, (RESPONSE_CODE): responseCode, (HEADERS): responseHeaders]
-    } finally {
-      conn.disconnect()
+    // Millisecond deadlines keep the network proof tests fast without changing public settings.
+    protected WsClient(Duration connectTimeout, long deadlineMillis, long smallCallCapMillis) {
+        this.requestDeadlineMillis = deadlineMillis
+        this.smallCallCapMillis = smallCallCapMillis
+        HttpClient.Builder builder = HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1)
+            .followRedirects(HttpClient.Redirect.NORMAL).connectTimeout(connectTimeout)
+        ProxySelector proxy = ProxySelector.getDefault()
+        if (proxy != null) builder.proxy(proxy)
+        httpClient = builder.build()
     }
-  }
 
-  Map<String, Object> postMultipart(String urlString, File file, String fieldName = "bundle", String username, String password) throws IOException {
-    def boundary = "----WebKitFormBoundary${UUID.randomUUID().toString().replaceAll('-', '')}"
-    def lineEnd = "\r\n"
-    def twoHyphens = "--"
-
-    def conn = new URL(urlString).openConnection() as HttpURLConnection
-    conn.setRequestMethod("POST")
-    conn.setDoOutput(true)
-    conn.setRequestProperty("Content-Type", "multipart/form-data; boundary=${boundary}")
-    conn.setRequestProperty("Accept", "application/json")
-    conn.setRequestProperty("Authorization", auth(username, password))
-
-    byte[] prefix = ("${twoHyphens}${boundary}${lineEnd}" +
-        "Content-Disposition: form-data; name=\"${fieldName}\"; filename=\"${file.name}\"${lineEnd}" +
-        "Content-Type: application/zip${lineEnd}${lineEnd}").getBytes('UTF-8')
-    byte[] suffix = "${lineEnd}${twoHyphens}${boundary}--${lineEnd}".getBytes('UTF-8')
-    conn.setFixedLengthStreamingMode(file.length() + prefix.length + suffix.length)
-    try {
-      conn.connect()
-      try (OutputStream out = conn.outputStream; InputStream input = new FileInputStream(file)) {
-        out.write(prefix)
-        input.transferTo(out)
-        out.write(suffix)
-      }
-
-      int responseCode = conn.responseCode
-      ensureSuccess(responseCode, '', conn)
-      String body = readBody(conn.inputStream)
-      return [(RESPONSE_CODE): responseCode, (BODY): body, (HEADERS): conn.headerFields]
-    } finally {
-      conn.disconnect()
+    long effectiveDeadlineMillis(boolean upload) {
+        upload ? requestDeadlineMillis : Math.min(requestDeadlineMillis, smallCallCapMillis)
     }
-  }
 
-  private static void ensureSuccess(int responseCode, String body, HttpURLConnection conn) {
-    if (responseCode >= 200 && responseCode < 300) {
-      return
+    Map<String, Object> get(String url, String username, String password) throws IOException {
+        send(url, HttpRequest.BodyPublishers.noBody(), 'GET', APPLICATION_JSON, username, password, false)
     }
-    String errorBody = readBody(conn.getErrorStream())
-    if (!errorBody) {
-      errorBody = body
-    }
-    LOGGER.lifecycle("HTTP call failed with status ${responseCode}")
-    if (errorBody) {
-      LOGGER.lifecycle(errorBody)
-    }
-    throw new WsException(responseCode, errorBody)
-  }
 
-  private static String readBody(InputStream stream) {
-    if (stream == null) {
-      return ''
+    Map<String, Object> post(String url, byte[] payload, String username, String password,
+                             String contentType = APPLICATION_JSON) throws IOException {
+        send(url, HttpRequest.BodyPublishers.ofByteArray(payload ?: new byte[0]), 'POST', contentType, username, password, false)
     }
-    try (InputStream is = stream; BufferedReader br = new BufferedReader(new InputStreamReader(is))) {
-      StringBuilder writer = new StringBuilder()
-      String line
-      while ((line = br.readLine()) != null) {
-        writer.append(line).append('\n')
-      }
-      return writer.toString()
-    }
-  }
 
-  abstract String auth(String username, String password)
+    Map<String, Object> postMultipart(String url, File file, String fieldName = 'bundle',
+                                      String username, String password) throws IOException {
+        String boundary = "----WebKitFormBoundary${UUID.randomUUID().toString().replace('-', '')}"
+        byte[] prefix = ("--${boundary}\r\n" +
+            "Content-Disposition: form-data; name=\"${fieldName}\"; filename=\"${file.name}\"\r\n" +
+            "Content-Type: application/zip\r\n\r\n").getBytes(StandardCharsets.UTF_8)
+        byte[] suffix = "\r\n--${boundary}--\r\n".getBytes(StandardCharsets.UTF_8)
+        send(url, HttpRequest.BodyPublishers.concat(HttpRequest.BodyPublishers.ofByteArray(prefix),
+            HttpRequest.BodyPublishers.ofFile(file.toPath()), HttpRequest.BodyPublishers.ofByteArray(suffix)),
+            'POST', "multipart/form-data; boundary=${boundary}", username, password, true)
+    }
+
+    private Map<String, Object> send(String url, HttpRequest.BodyPublisher body, String method,
+                                     String contentType, String username, String password, boolean upload) throws IOException {
+        long deadline = effectiveDeadlineMillis(upload)
+        long start = System.nanoTime()
+        HttpRequest request = HttpRequest.newBuilder(URI.create(url)).timeout(Duration.ofMillis(deadline))
+            .header('Accept', APPLICATION_JSON).header('Content-Type', contentType)
+            .header('Authorization', auth(username, password)).method(method, body).build()
+        def future = httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofString())
+        HttpResponse<String> response
+        try {
+            long remaining = Math.max(1L, deadline - TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start))
+            response = future.get(remaining, TimeUnit.MILLISECONDS)
+        } catch (TimeoutException e) {
+            future.cancel(true)
+            throw new SocketTimeoutException("Request exceeded overall deadline of ${deadline / 1000.0}s: ${url}")
+        } catch (ExecutionException e) {
+            Throwable cause = e.cause
+            if (cause instanceof java.net.http.HttpTimeoutException) {
+                SocketTimeoutException timeout = new SocketTimeoutException("Request exceeded overall deadline of ${deadline / 1000.0}s: ${url}")
+                timeout.initCause(cause)
+                throw timeout
+            }
+            if (cause instanceof IOException) throw (IOException) cause
+            throw new IOException('HTTP request failed', cause)
+        } catch (InterruptedException e) {
+            future.cancel(true)
+            Thread.currentThread().interrupt()
+            throw new IOException('HTTP request interrupted', e)
+        }
+        if (response.statusCode() < 200 || response.statusCode() >= 300) {
+            throw new WsException(response.statusCode(), response.body())
+        }
+        [(BODY): response.body(), (RESPONSE_CODE): response.statusCode(), (HEADERS): response.headers().map()] as Map<String, Object>
+    }
+
+    abstract String auth(String username, String password)
 }

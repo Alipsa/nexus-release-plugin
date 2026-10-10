@@ -7,7 +7,7 @@ import org.gradle.api.logging.Logger
 
 /**
  * HTTP client for interacting with the Central Portal API.
- * This class is configuration cache compatible - it only stores serializable values.
+ * Instances are created during task execution, outside configuration-cache state.
  */
 @CompileStatic
 class CentralPortalClient extends WsClient {
@@ -19,6 +19,20 @@ class CentralPortalClient extends WsClient {
     String password
 
     CentralPortalClient(Logger logger, String nexusUrl, String userName, String password) {
+        this(logger, nexusUrl, userName, password, 30, 1800)
+    }
+
+    CentralPortalClient(Logger logger, String nexusUrl, String userName, String password, int connectSeconds, int requestSeconds) {
+        super(connectSeconds, requestSeconds)
+        this.log = logger
+        this.publishUrl = nexusUrl ?: CENTRAL_PORTAL_URL
+        this.userName = userName
+        this.password = password
+    }
+
+    protected CentralPortalClient(Logger logger, String nexusUrl, String userName, String password,
+                                  java.time.Duration connectTimeout, long requestMillis, long smallCallMillis) {
+        super(connectTimeout, requestMillis, smallCallMillis)
         this.log = logger
         this.publishUrl = nexusUrl ?: CENTRAL_PORTAL_URL
         this.userName = userName
@@ -93,7 +107,7 @@ class CentralPortalClient extends WsClient {
         return status?.get('deploymentState') as String
     }
 
-    private GradleException createUploadException(WsException e) {
+    GradleException createUploadException(WsException e) {
         String body = e.body?.trim()
         switch (e.statusCode) {
             case 401:

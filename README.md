@@ -222,3 +222,11 @@ The opt-in `se.alipsa.nexus-release-all` support plugin adds manifest planning, 
 ## License
 
 MIT License - see [LICENSE](LICENSE) for details.
+
+### Release deadlines and bundle contents in 2.3.0
+
+`httpConnectTimeoutSeconds` defaults to 30 and `httpRequestTimeoutSeconds` to 1800. Both accept 1–86400 seconds. Set them in `nexusReleasePlugin`; overrides apply to `release`. Uploads use the full request deadline. Deployment status checks and other small calls through `CentralPortalClient` use the shorter of 60 seconds and the configured deadline. The caller stops waiting even if an upload or response body stalls. Cancellation closed stalled connections in the verified runtime matrix; no stronger guarantee is made for arbitrary network implementations.
+
+`releaseAll` uses the default client timeouts. Its separate `PublicationStatus` and HEAD availability checks do not receive this overall deadline. Runtime testing covers JDK 17 and 21 with Gradle 8.13 and 9.4.0; compilation targets Java 17. Other daemon JDKs are outside the verified support matrix.
+
+`statusCheckRetries` is the number of additional checks after the first one. Transient errors consume a check and are retried within that budget. Authentication and permission errors fail immediately. Exhaustion reports an unknown or pending deployment that may still publish, with a Portal link.

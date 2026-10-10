@@ -62,6 +62,8 @@ class NexusReleasePlugin implements Plugin<Project> {
             task.artifactId.set(extension.mavenPublication.map { it.artifactId })
 
             // Wire credentials from extension
+            task.httpConnectTimeoutSeconds.set(extension.httpConnectTimeoutSeconds)
+            task.httpRequestTimeoutSeconds.set(extension.httpRequestTimeoutSeconds)
             task.nexusUrl.set(extension.nexusUrl)
             task.userName.set(extension.userName)
             task.password.set(extension.password)
