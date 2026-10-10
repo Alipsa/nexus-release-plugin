@@ -20,6 +20,35 @@ class BundleMetadataTest {
         }
     }
 
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = ['publishToMavenLocal', 'publish'])
+    void ordinaryPublishingDoesNotRequireSelectedPublication(String publishingTask) {
+        String script = TestFixtures.createBuildScript().replace('mavenPublication = publishing.publications.maven', '') + '''
+ publishing.repositories.maven { name = 'fixture'; url = layout.projectDirectory.dir('repository') }
+'''
+        File dir = TestFixtures.createTestProject(script)
+        try {
+            def args = [publishingTask, '--configuration-cache', '--configuration-cache-problems=fail', '--parallel', '--no-build-cache'] as String[]
+            def first = run(dir, *args)
+            assertNull(first.task(':clearModuleMetadata'))
+            assertEquals(TaskOutcome.SUCCESS, first.task(':generateMetadataFileForMavenPublication').outcome)
+            assertEquals(TaskOutcome.SUCCESS, first.task(':signMavenPublication').outcome)
+            File metadata = new File(dir, 'build/publications/maven/module.json')
+            File signature = new File(metadata.path + '.asc')
+            assertTrue(metadata.isFile()); assertTrue(signature.isFile())
+            byte[] original = metadata.bytes
+            byte[] originalSignature = signature.bytes
+            def repeated = run(dir, *args)
+            assertTrue(repeated.output.contains('Reusing configuration cache'))
+            assertNull(repeated.task(':clearModuleMetadata'))
+            assertTrue(repeated.task(':generateMetadataFileForMavenPublication').outcome in [TaskOutcome.UP_TO_DATE, TaskOutcome.SUCCESS])
+            assertEquals(TaskOutcome.UP_TO_DATE, repeated.task(':signMavenPublication').outcome)
+            assertArrayEquals(original, metadata.bytes)
+            assertArrayEquals(originalSignature, signature.bytes)
+            assertTrue(fail(dir, 'bundle').output.contains('nexusReleasePlugin.mavenPublication must be set'))
+        } finally { dir.parentFile.deleteDir() }
+    }
+
     @Test void metadataRebuiltWithWatchingParallelAndConfigurationCache() {
         File dir = TestFixtures.createTestProject()
         try {

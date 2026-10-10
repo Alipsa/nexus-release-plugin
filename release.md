@@ -28,6 +28,7 @@
   Other packaging without a main JAR receives a clear error instead of misleading "missing .jar" errors.
 - `release` validation now requires a signature and checksums for every artifact in the bundle, not only for a fixed
   set of JAR/POM files.
+- Ordinary `publish` and `publishToMavenLocal` builds do not require `mavenPublication`; metadata cleanup only attaches when a publication is selected.
 - Behaviour change: `bundle` now depends only on the configured publication's
   `publish<Name>PublicationToMavenLocal` task instead of `publishToMavenLocal`, so other publications are no
   longer installed to `~/.m2` as a side effect.

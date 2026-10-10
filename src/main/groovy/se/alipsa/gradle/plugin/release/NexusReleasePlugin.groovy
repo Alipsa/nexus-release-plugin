@@ -35,7 +35,7 @@ class NexusReleasePlugin implements Plugin<Project> {
         project.tasks.withType(GenerateModuleMetadata).configureEach { GenerateModuleMetadata metadata ->
             metadata.dependsOn(extension.mavenPublication.map { MavenPublication pub ->
                 metadata.name == "generateMetadataFileFor${pub.name.capitalize()}Publication" ? [clear] : []
-            })
+            }.orElse([]))
         }
         // Resolve configured output paths as detached Files, avoiding a cleanup -> generation cycle.
         def metadataPath = selectedPublication.map { MavenPublication pub ->
