@@ -38,7 +38,7 @@ class CombinedBundle {
                         File checksum = new File(source.path + '.' + algorithm.toLowerCase().replace('-', ''))
                         String hash = ReleaseChecksums.checksum(source, algorithm)
                         checksums[entry][algorithm] = hash
-                        if (checksum.exists() && checksum.text.trim() != hash) throw new IllegalArgumentException("Incorrect checksum for ${entry}")
+                        if (checksum.exists() && checksum.text.trim().split(/\s+/)[0].toLowerCase(Locale.ROOT) != hash) throw new IllegalArgumentException("Incorrect checksum for ${entry}")
                     }
                 }
             }
@@ -49,7 +49,7 @@ class CombinedBundle {
             if (!metadataErrors.empty) throw new IllegalArgumentException(metadataErrors.join('; '))
         }
         target.parentFile.mkdirs()
-        File temporary = new File(target.path + '.tmp')
+        File temporary = java.nio.file.Files.createTempFile(target.absoluteFile.parentFile.toPath(), target.name + '.', '.tmp').toFile()
         try {
             temporary.withOutputStream { output ->
                 OutputStream bounded = new FilterOutputStream(output) {
@@ -75,7 +75,7 @@ class CombinedBundle {
                 }
             }
             if (temporary.length() > limit) throw new IllegalArgumentException('ZIP exceeds bundle limit')
-            java.nio.file.Files.move(temporary.toPath(), target.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+            java.nio.file.Files.move(temporary.toPath(), target.toPath(), java.nio.file.StandardCopyOption.ATOMIC_MOVE, java.nio.file.StandardCopyOption.REPLACE_EXISTING)
         } finally { temporary.delete() }
     }
 }

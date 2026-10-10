@@ -14,6 +14,8 @@ abstract class SigningPreflightTask extends DefaultTask {
     @InputFile @PathSensitive(PathSensitivity.NONE) abstract RegularFileProperty getManifestFile()
     @Input abstract Property<Boolean> getStrict()
 
+    SigningPreflightTask() { strict.convention(false) }
+
     /** Reports missing setup in dry-run; blocks preparation without signing configuration. */
     @TaskAction
     void checkSigning() {

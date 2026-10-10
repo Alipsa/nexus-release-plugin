@@ -58,6 +58,9 @@ class CombinedDeployment {
         for (int attempt = 0; attempt < attempts; attempt++) {
             try {
                 Map status = client.getDeploymentStatus(id)
+                if (!(status?.deploymentState in ['PENDING', 'VALIDATING', 'VALIDATED', 'PUBLISHING', 'PUBLISHED', 'FAILED'])) {
+                    throw new IOException('Invalid deployment status response: missing or unknown deploymentState')
+                }
                 state.state = status.deploymentState
                 ReleaseManifest.write(record, state)
                 if (state.state == 'FAILED') {
@@ -70,6 +73,7 @@ class CombinedDeployment {
                     return
                 }
             } catch (IOException failure) {
+                if (failure instanceof WsException && failure.statusCode in [401, 403]) throw failure
                 state.lastPollingError = failure.message
                 ReleaseManifest.write(record, state)
             }

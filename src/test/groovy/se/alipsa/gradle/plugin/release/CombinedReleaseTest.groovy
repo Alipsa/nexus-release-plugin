@@ -89,6 +89,8 @@ class CombinedReleaseTest {
         }
         new File(directory, 'download.pom').text = 'unrelated'
         File zip = new File(directory, 'bundle.zip')
+        File jar = new File(directory, 'g/matrix-all/1/matrix-all-1.jar')
+        new File(jar.path + '.sha1').text = ReleaseChecksums.checksum(jar, 'SHA-1').toUpperCase(Locale.ROOT) + '  ' + jar.name
         CombinedBundle.create(directory, zip, [pom, all])
         new ZipFile(zip).withCloseable { archive ->
             assertEquals(18, archive.size())
@@ -317,8 +319,84 @@ class CombinedReleaseTest {
         assertEquals('', release.resumeId.get())
         assertEquals('https://repo.maven.apache.org/maven2', release.repositoryUrl.get())
         assertEquals(CentralPortalClient.CENTRAL_PORTAL_URL, release.portalUrl.get())
+        assertFalse(project.tasks.getByName('releaseAllSigningCheck').strict.get())
         assertEquals([], project.tasks.getByName('releaseAllPlan').releaseNamespaces.get())
         assertEquals('release-staging', project.tasks.getByName('releaseAllPrepareMaven').stagingRepositoryId.get())
+    }
+
+    @Test void gitWarningsStayOutOfSourceOutput() {
+        git(directory, 'init')
+        git(directory, 'config', 'alias.release-warning', '!echo warning >&2; echo revision')
+        assertEquals('revision', ReleaseManifest.git(directory, 'release-warning'))
+        def failure = assertThrows(IllegalStateException) {
+            ReleaseManifest.git(directory, 'rev-parse', '--verify', 'missing-ref')
+        }
+        assertTrue(failure.message.contains('fatal:'))
+    }
+
+    @Test void concurrentRecordUpdatesKeepValidJournal() {
+        File record = new File(directory, 'journal.json')
+        ReleaseManifest.write(record, [state: 'UPLOADED'])
+        def executor = java.util.concurrent.Executors.newFixedThreadPool(3)
+        try {
+            def writers = (1..2).collect { int writer ->
+                executor.submit({ ->
+                    100.times { ReleaseManifest.write(record, [state: 'UPLOADED', writer: writer]) }
+                } as Runnable)
+            }
+            300.times { assertEquals('UPLOADED', ReleaseManifest.read(record).state) }
+            writers.each { it.get(10, java.util.concurrent.TimeUnit.SECONDS) }
+            assertFalse(directory.listFiles().any { it.name.endsWith('.tmp') })
+        } finally { executor.shutdownNow() }
+    }
+
+    @Test void parentPomsAreRejectedClearlyAndExternalManagedVersionsCanBeFlattened() {
+        File pom = new File(directory, 'parent.pom')
+        pom.text = pomText('a', 'pom').replace('</project>', '<parent><groupId>g</groupId><artifactId>parent</artifactId><version>1</version></parent></project>')
+        assertTrue(assertThrows(IllegalArgumentException) { ReleasePom.read(pom) }.message.contains('Parent POM'))
+        String dependency = '<dependencies><dependency><groupId>external</groupId><artifactId>b</artifactId></dependency></dependencies>'
+        pom.text = pomText('a', 'pom').replace('</project>', dependency + '</project>')
+        Map expected = ReleasePom.read(pom)
+        expected.publishedDependencies = expected.dependencies
+        pom.text = pom.text.replace('<artifactId>b</artifactId>', '<artifactId>b</artifactId><version>2</version>')
+        ReleasePom.compare(pom, expected)
+        pom.text = pom.text.replace('<artifactId>b</artifactId>', '<artifactId>c</artifactId>')
+        assertThrows(IllegalArgumentException) { ReleasePom.compare(pom, expected) }
+    }
+
+    @Test void wildcardDependencyVersionsMustBeConcreteReleases() {
+        File pom = new File(directory, 'external.pom')
+        String source = pomText('a', 'pom').replace('</project>', '<dependencies><dependency><groupId>external</groupId><artifactId>b</artifactId></dependency></dependencies></project>')
+        pom.text = source
+        Map expected = ReleasePom.read(pom)
+        expected.publishedDependencies = expected.dependencies
+        ['', '2-SNAPSHOT', '[1.0,2.0)', '${unresolved}', '2.+', 'latest.release'].each { String version ->
+            pom.text = source.replace('<artifactId>b</artifactId>', "<artifactId>b</artifactId><version>${version}</version>")
+            assertThrows(IllegalArgumentException) { ReleasePom.compare(pom, expected) }
+        }
+        pom.text = source.replace('<artifactId>b</artifactId>', '<artifactId>b</artifactId><version>2.0</version>')
+        ReleasePom.compare(pom, expected)
+    }
+
+    @Test void pollingRejectsAuthenticationImmediatelyAndPreservesStateOnBadResponses() {
+        [401, 403].each { int code ->
+            File record = new File(directory, "auth-${code}.json")
+            ReleaseManifest.write(record, [deploymentId: 'id', state: 'UPLOADED'])
+            int polls = 0
+            def client = new CentralPortalClient(org.gradle.api.logging.Logging.getLogger(CombinedReleaseTest), null, 'u', 'p') {
+                @Override Map<String, Object> getDeploymentStatus(String id) { polls++; throw new WsException(code, 'denied') }
+            }
+            assertThrows(WsException) { CombinedDeployment.resume(record, 'id', client, { false }, 3, 0) }
+            assertEquals(1, polls)
+            assertEquals('UPLOADED', ReleaseManifest.read(record).state)
+        }
+        File record = new File(directory, 'invalid.json')
+        ReleaseManifest.write(record, [deploymentId: 'id', state: 'UPLOADED'])
+        def client = new CentralPortalClient(org.gradle.api.logging.Logging.getLogger(CombinedReleaseTest), null, 'u', 'p') {
+            @Override Map<String, Object> getDeploymentStatus(String id) { [:] }
+        }
+        assertThrows(IllegalStateException) { CombinedDeployment.resume(record, 'id', client, { false }, 2, 0) }
+        assertEquals('UPLOADED', ReleaseManifest.read(record).state)
     }
 
     private static void git(File root, String... args) {

@@ -9,10 +9,12 @@ class ReleaseManifest {
     static String git(File root, String... arguments) { gitOutput(root, arguments).trim() }
 
     static String gitOutput(File root, String... arguments) {
-        Process process = new ProcessBuilder(['git', '-C', root.absolutePath] + arguments.toList()).redirectErrorStream(true).start()
-        String output = process.inputStream.getText('UTF-8')
-        if (process.waitFor() != 0) throw new IllegalStateException('Git source validation failed')
-        output
+        Process process = new ProcessBuilder(['git', '-C', root.absolutePath] + arguments.toList()).start()
+        StringBuffer output = new StringBuffer()
+        StringBuffer errors = new StringBuffer()
+        process.waitForProcessOutput(output, errors)
+        if (process.exitValue() != 0) throw new IllegalStateException('Git source validation failed: ' + errors.toString().trim())
+        output.toString()
     }
 
     /** Rejects index flags that can hide working-tree changes, preserving arbitrary filenames. */
@@ -49,8 +51,10 @@ class ReleaseManifest {
     /** Atomically replaces a JSON file in its output directory. */
     static void write(File file, Map value) {
         file.parentFile.mkdirs()
-        File temporary = new File(file.path + '.tmp')
-        temporary.setText(JsonOutput.prettyPrint(JsonOutput.toJson(value)), 'UTF-8')
-        java.nio.file.Files.move(temporary.toPath(), file.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+        File temporary = java.nio.file.Files.createTempFile(file.absoluteFile.parentFile.toPath(), file.name + '.', '.tmp').toFile()
+        try {
+            temporary.setText(JsonOutput.prettyPrint(JsonOutput.toJson(value)), 'UTF-8')
+            java.nio.file.Files.move(temporary.toPath(), file.toPath(), java.nio.file.StandardCopyOption.ATOMIC_MOVE, java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+        } finally { temporary.delete() }
     }
 }

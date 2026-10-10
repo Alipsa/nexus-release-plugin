@@ -48,6 +48,9 @@ abstract class ReleaseAllPlanTask extends DefaultTask {
                 publishedDependencies: parsed.dependencies, publishedManagement: parsed.management, files: registered.files ?: [])
             candidates.add(publication)
         }
+        candidates.groupBy { it.projectPath }.each { String path, List publications ->
+            if (path && publications.size() > 1) throw new IllegalArgumentException("Multiple publications for project ${path} are not supported by the version guard")
+        }
         Map bom = ReleasePom.read(bomPom.get().asFile)
         Map<String, String> managed = bom.management.collectEntries { ["${it.groupId}:${it.artifactId}".toString(), it.version] }
         Map all = ReleasePom.read(allPom.get().asFile, bom.properties, managed)

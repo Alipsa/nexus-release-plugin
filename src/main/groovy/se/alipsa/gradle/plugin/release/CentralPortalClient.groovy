@@ -84,7 +84,7 @@ class CentralPortalClient extends WsClient {
             body = new JsonSlurper().parseText(result.get(BODY) as String) as Map
         } catch (Exception e) {
             String responseBody = result.get(BODY) as String
-            throw new GradleException("Failed to parse deployment status response for deployment ID ${deploymentId}: ${e.message}. Body: ${responseBody}")
+            throw new IOException("Failed to parse deployment status response for deployment ID ${deploymentId}: ${e.message}. Body: ${responseBody}", e)
         }
         return body as Map<String, Object>
     }

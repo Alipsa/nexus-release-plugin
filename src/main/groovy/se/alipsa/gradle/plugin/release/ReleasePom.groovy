@@ -7,6 +7,7 @@ class ReleasePom {
     /** Reads exact dependencies with inherited BOM properties and management. */
     static Map read(File file, Map<String, String> inherited = [:], Map<String, String> managed = [:]) {
         def pom = new XmlSlurper().parse(file)
+        if (pom.parent.size()) throw new IllegalArgumentException("Parent POM inheritance is not supported for ${file.name}; provide a self-contained POM")
         Map<String, String> properties = new LinkedHashMap<>(inherited)
         pom.properties.children().each { properties[it.name().toString()] = it.text() }
         properties['project.version'] = pom.version.text()
@@ -42,7 +43,21 @@ class ReleasePom {
             if (actual[key] != expected[key]) throw new IllegalArgumentException("Published POM ${key} differs from manifest")
         }
         def signature = { Map edge -> ['groupId', 'artifactId', 'version', 'scope', 'type', 'classifier'].collect { edge[it] ?: '' }.join(':') }
-        if (actual.dependencies.collect(signature).sort() != expected.publishedDependencies.collect(signature).sort()) {
+        List<Map> unmatched = new ArrayList<>(actual.dependencies)
+        boolean dependenciesMatch = expected.publishedDependencies.every { Map edge ->
+            int index = unmatched.findIndexOf { Map published ->
+                if (edge.version) return signature(published) == signature(edge)
+                if (signature(published + [version: '']) != signature(edge)) return false
+                try {
+                    new ReleaseCoordinate(published.groupId, published.artifactId, published.version).validate()
+                } catch (IllegalArgumentException ignored) { return false }
+                !published.version.endsWith('-SNAPSHOT')
+            }
+            if (index < 0) return false
+            unmatched.remove(index)
+            true
+        }
+        if (!dependenciesMatch || !unmatched.empty) {
             throw new IllegalArgumentException('Published dependencies differ from manifest')
         }
         if (expected.containsKey('publishedManagement') && actual.management.collect(signature).sort() != expected.publishedManagement.collect(signature).sort()) {

@@ -78,6 +78,7 @@ class CentralUploadApiTest {
     portalClient.upload(zipFile)
 
     def recorded = server.takeRequest()
+    assertEquals(recorded.bodySize.toString(), recorded.getHeader("Content-Length"))
     assert recorded.method == "POST"
     assert recorded.path.contains("publishingType=AUTOMATIC")
     assert recorded.getHeader("Authorization")?.startsWith("Bearer ")
