@@ -54,7 +54,16 @@ Eligibility edges include candidate group/artifact pairs and groups covered by t
 dependencies remain in POM expectations but are not availability probes; test/system edges
 are also excluded from eligibility. Candidate JSON requires a nonempty `files` list; omitted
 `dependencies` defaults to an empty list.
-Invalid release dependency versions exclude the dependent candidate rather than aborting planning.
+All explicit non-test/system versions in published dependencies and dependency management,
+including third-party dependencies and imported BOMs, must be concrete release versions.
+SNAPSHOTs, version ranges, dynamic versions and unresolved expressions exclude the candidate;
+these exclusions cascade to dependents. Third-party availability is still not probed.
+Rejecting third-party ranges and dynamic versions is a deliberate combined-release policy
+change; use concrete pins even if the repository accepts ranges in published POMs.
+Dependencies whose versions come from an imported BOM can remain unspecified in the source
+POM, but their flattened published versions must be concrete non-SNAPSHOT versions.
+Invalid eligibility-edge versions also exclude the dependent candidate rather than aborting
+planning. Unresolved source POM expressions fail static inspection before selection.
 Only exact non-SNAPSHOT versions whose dependencies are released or in the final bundle are
 selected. Exclusions cascade; a selected module's mismatched BOM pin blocks the new BOM.
 An unselected module can retain an already-released BOM pin with a warning.

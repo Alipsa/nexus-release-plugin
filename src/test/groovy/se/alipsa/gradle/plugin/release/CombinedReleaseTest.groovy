@@ -39,11 +39,34 @@ class CombinedReleaseTest {
         }
     }
 
+    @Test void externalManagementAndImportedBomVersionsAreValidatedAndCascade() {
+        ['compile', 'import'].each { String scope ->
+            ['2-SNAPSHOT', '[1,2)', '2.+', '${unresolved}'].each { String version ->
+                def bom = candidate('matrix-bom', '1')
+                bom.publishedManagement = [[groupId: 'external', artifactId: 'library', version: version,
+                    scope: scope, type: scope == 'import' ? 'pom' : 'jar', origin: 'pom.dependencyManagement']]
+                def aggregate = candidate('matrix-all', '1')
+                aggregate.dependencies = [[groupId: 'g', artifactId: 'matrix-bom', version: '1', origin: 'pom.dependencies']]
+                assertTrue(ReleasePlanner.select([aggregate, bom], { coordinate ->
+                    assertFalse(coordinate.groupId == 'external')
+                    false
+                }).empty)
+                assertTrue(bom.reasons.any { it.contains("external:library:${version}") })
+                assertTrue(aggregate.reasons.any { it.contains('Unavailable dependency') })
+            }
+        }
+    }
+
     @Test void externalReleaseAndBomManagedVersionsRemainEligibleAndTestScopesAreIgnored() {
         def core = candidate('core', '1')
         core.publishedDependencies = [
             [groupId: 'external', artifactId: 'release', version: '2.0', scope: 'compile'],
             [groupId: 'external', artifactId: 'managed', version: '', scope: 'runtime'],
+            [groupId: 'external', artifactId: 'test', version: '2-SNAPSHOT', scope: 'test'],
+            [groupId: 'external', artifactId: 'system', version: '[1,2)', scope: 'system']
+        ]
+        core.publishedManagement = [
+            [groupId: 'external', artifactId: 'bom', version: '2.0', scope: 'import', type: 'pom'],
             [groupId: 'external', artifactId: 'test', version: '2-SNAPSHOT', scope: 'test'],
             [groupId: 'external', artifactId: 'system', version: '[1,2)', scope: 'system']
         ]
