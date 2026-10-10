@@ -10,6 +10,18 @@ class ReleasePlanner {
             availability.computeIfAbsent(c.key()) { released(c) }
         }
         candidates.each { PublicationDescriptor p ->
+            // Published edges remain complete even when eligibility edges are filtered by namespace.
+            p.publishedDependencies.findAll { !(it.scope in ['test', 'system']) && it.version }.each { Map edge ->
+                def dependency = new ReleaseCoordinate(edge.groupId, edge.artifactId, edge.version)
+                try { dependency.validate() }
+                catch (IllegalArgumentException invalid) {
+                    p.reasons.add("Invalid published dependency: ${dependency.key()}: ${invalid.message}")
+                    return
+                }
+                if (dependency.version.endsWith('-SNAPSHOT')) {
+                    p.reasons.add("SNAPSHOT dependency: ${dependency.key()} (${edge.origin})")
+                }
+            }
             p.coordinate.validate()
             if (p.coordinate.version.endsWith('-SNAPSHOT')) p.reasons.add('SNAPSHOT version')
             else if (lookup(p.coordinate)) p.reasons.add('Already released')

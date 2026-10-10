@@ -20,6 +20,39 @@ class CombinedReleaseTest {
         assertTrue(plot.reasons.first().contains('Unavailable'))
     }
 
+    @Test void invalidExternalPublishedVersionsExcludeCandidatesAndCascade() {
+        ['2.0-SNAPSHOT', '[1.0,2.0)', '${unresolved}', '2.+', 'latest.release'].each { String version ->
+            def core = candidate('core', '1')
+            // The external edge has already been removed from namespace-filtered dependencies.
+            core.publishedDependencies = [[groupId: 'external', artifactId: 'library', version: version, scope: 'runtime', origin: 'pom.dependencies']]
+            def dependent = candidate('dependent', '1')
+            dependent.dependencies = [[groupId: 'g', artifactId: 'core', version: '1', origin: 'pom.dependencies']]
+            def unrelated = candidate('unrelated', '1')
+            List<String> lookedUp = []
+            assertEquals([unrelated], ReleasePlanner.select([dependent, core, unrelated], { coordinate ->
+                lookedUp.add(coordinate.key())
+                false
+            }))
+            assertTrue(core.reasons.any { it.contains("external:library:${version}") })
+            assertTrue(dependent.reasons.any { it.contains('Unavailable dependency') })
+            assertFalse(lookedUp.any { it.startsWith('external:') })
+        }
+    }
+
+    @Test void externalReleaseAndBomManagedVersionsRemainEligibleAndTestScopesAreIgnored() {
+        def core = candidate('core', '1')
+        core.publishedDependencies = [
+            [groupId: 'external', artifactId: 'release', version: '2.0', scope: 'compile'],
+            [groupId: 'external', artifactId: 'managed', version: '', scope: 'runtime'],
+            [groupId: 'external', artifactId: 'test', version: '2-SNAPSHOT', scope: 'test'],
+            [groupId: 'external', artifactId: 'system', version: '[1,2)', scope: 'system']
+        ]
+        assertEquals([core], ReleasePlanner.select([core], { coordinate ->
+            assertEquals('g:core:1', coordinate.key())
+            false
+        }))
+    }
+
     @Test void releasedOldBomPinDoesNotBlockUnselectedSnapshot() {
         def arff = candidate('matrix-arff', '0.3.1-SNAPSHOT')
         def bom = candidate('matrix-bom', '2.7.0')

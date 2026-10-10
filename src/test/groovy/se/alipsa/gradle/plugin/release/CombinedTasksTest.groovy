@@ -34,7 +34,7 @@ class CombinedTasksTest {
                 String packaging = name in ['matrix-bom', 'platform'] ? 'pom' : 'jar'
                 String xml = """<project><groupId>g</groupId><artifactId>${name}</artifactId><version>1</version><packaging>${packaging}</packaging><name>Test</name><description>Test</description><url>https://example.org</url><licenses><license><name>MIT</name><url>https://example.org</url></license></licenses><developers><developer><name>Test</name></developer></developers><scm><url>https://example.org</url><connection>scm:git:example</connection></scm></project>"""
                 String testOnly = name == 'matrix-all' ? '<dependencies><dependency><groupId>g</groupId><artifactId>test-only</artifactId><version>1-SNAPSHOT</version><scope>test</scope></dependency></dependencies>' : ''
-                if (name == 'slim') xml = xml.replace('</project>', '<dependencies><dependency><groupId>external</groupId><artifactId>private-library</artifactId><version>[1,2)</version></dependency></dependencies></project>')
+                if (name == 'slim') xml = xml.replace('</project>', '<dependencies><dependency><groupId>external</groupId><artifactId>private-library</artifactId><version>1.5</version></dependency></dependencies></project>')
                 xml = xml.replace('</project>', testOnly + '</project>')
                 new File(root, name + '.xml').text = xml
                 File staged = new File(root, "build/staging/g/${name}/1"); staged.mkdirs()
