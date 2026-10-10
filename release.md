@@ -1,6 +1,6 @@
 # Release history
 
-## Ver 2.2.1, in progress
+## Ver 2.3.0, in progress
 - Dependency updates:
   - com.github.ben-manes.versions:com.github.ben-manes.versions.gradle.plugin [0.53.0 -> 0.54.0]
   - com.gradle.plugin-publish:com.gradle.plugin-publish.gradle.plugin [2.1.0 -> 2.1.1]
