@@ -55,8 +55,8 @@ class BundleValidator {
                     return
                 }
                 String packaging = pom.packaging.text() ?: 'jar'
-                if (packaging != 'jar') {
-                    errors.add("Packaging '${packaging}' is not supported by the release task in this version; only jar-packaged publications (optionally with additional artifacts) can be released" +
+                if (packaging != 'jar' && zip.getEntry("${basePath}${artifactPrefix}.jar") == null) {
+                    errors.add("Packaging '${packaging}' is not supported by the release task in this version; a main JAR is required (additional artifacts are supported)" +
                         (packaging == 'pom' ? '. For pom-packaged publications such as BOMs, use the combined release (releaseAll)' : ''))
                     return
                 }

@@ -182,12 +182,6 @@ abstract class BundleTask extends DefaultTask {
         }
     }
 
-    private boolean addFileToZip(File baseFile, String suffix, String mavenPathPrefix, ZipOutputStream zipOut) {
-        File sourceFile = new File(baseFile.absolutePath + suffix)
-        String targetPath = mavenPathPrefix + baseFile.name + suffix
-        addFileToZip(sourceFile, targetPath, zipOut)
-    }
-
     private void addChecksumToZip(File sourceFile, String algo, String targetPath, ZipOutputStream zipOut) throws IOException {
         logger.debug("Adding generated checksum: ${targetPath}")
         String hash = checksumFor(sourceFile, algo)

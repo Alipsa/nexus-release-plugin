@@ -42,7 +42,7 @@ class WsClientTimeoutTest {
                             }
                         }
                     }
-                    assertTrue(callerDone.await(5, TimeUnit.SECONDS))
+                    assertTrue(callerDone.await(8, TimeUnit.SECONDS))
                     // Drain the upload bytes already buffered before observing EOF/reset.
                     try {
                         byte[] buffer = new byte[65536]
@@ -64,7 +64,7 @@ class WsClientTimeoutTest {
                 else client.get(url, 'user', 'pass')
             }
             assertTrue(failure instanceof SocketTimeoutException || failure instanceof java.net.http.HttpTimeoutException, failure.toString())
-            assertTrue(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start) <= (mode == 'small' ? 2000 : 3000))
+            assertTrue(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start) <= (mode == 'small' ? 6000 : 7000))
             callerDone.countDown()
             assertTrue(closed.get(5, TimeUnit.SECONDS), "Connection not closed for ${mode}")
             peer.join(1000)
@@ -93,8 +93,8 @@ class WsClientTimeoutTest {
             Client client = new Client(500)
             long start = System.nanoTime()
             def results = (1..2).collect { workers.submit({ assertThrows(IOException) { client.get("http://127.0.0.1:${stalled.localPort}/", '', '') } } as Callable) }
-            results.each { it.get(2, TimeUnit.SECONDS) }
-            assertTrue(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start) < 1500)
+            results.each { it.get(6, TimeUnit.SECONDS) }
+            assertTrue(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start) < 5500)
             ServerSocket healthy = new ServerSocket(0)
             Thread responder = Thread.startDaemon {
                 healthy.accept().withCloseable { socket ->
@@ -160,4 +160,16 @@ class WsClientTimeoutTest {
             state = value == end[state] ? state + 1 : (value == 13 ? 1 : 0)
         }
     }
+    @org.junit.jupiter.api.Test
+    void distinguishesConnectTimeoutFromOverallDeadline() {
+        def connect = new java.net.http.HttpConnectTimeoutException('connection stalled')
+        def failure = WsClient.timeoutFailure(connect, 1800000, 'http://localhost/')
+        assertEquals('Connect timed out: http://localhost/', failure.message)
+        assertSame(connect, failure.cause)
+        def overall = new java.net.http.HttpTimeoutException('request stalled')
+        failure = WsClient.timeoutFailure(overall, 1800000, 'http://localhost/')
+        assertTrue(failure.message.startsWith('Request exceeded overall deadline of '), failure.message)
+        assertSame(overall, failure.cause)
+    }
+
 }

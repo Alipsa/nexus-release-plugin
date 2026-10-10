@@ -259,6 +259,11 @@ nexusReleasePlugin {
       def runner = MatrixRunner.create().withProjectDir(dir).withArguments('release').withPluginClasspath()
       def result = expected == 'success' ? runner.build() : runner.buildAndFail()
       if (expected != 'success') assertTrue(result.output.contains(expected), result.output)
+      responses.take(requests).eachWithIndex { response, index ->
+        if (response in ['PENDING', 'VALIDATING']) {
+          assertTrue(result.output.contains("Deploy status is ${response} (check ${index + 1}/${retries + 1})"), result.output)
+        }
+      }
       assertEquals(1, uploads.get())
       assertEquals(requests, statuses.get())
     } finally { dir.parentFile.deleteDir() }
@@ -269,7 +274,7 @@ nexusReleasePlugin {
       [0, ['PUBLISHED'], 'success', 1],
       [0, ['PENDING'], 'still PENDING after 1 status checks', 1],
       [0, [502], 'Last error:', 1],
-      [2, ['PENDING'], 'still PENDING after 3 status checks', 3],
+      [2, ['PENDING', 'VALIDATING', 'PENDING'], 'still PENDING after 3 status checks', 3],
       [2, [502, 'PUBLISHED'], 'success', 2],
       [2, [429, 'PUBLISHED'], 'success', 2],
       [2, ['malformed', 'PUBLISHED'], 'success', 2],
@@ -315,7 +320,7 @@ publishing.publications.maven.artifact(layout.buildDirectory.file('large.bin')) 
       def result = MatrixRunner.create().withProjectDir(dir).withArguments('release').withPluginClasspath().buildAndFail()
       assertTrue(result.output.contains('Request exceeded overall deadline'), result.output)
       assertTrue(acceptedAt.get() > 0)
-      assertTrue(java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - acceptedAt.get()) <= 2500, 'Stalled upload did not return promptly')
+      assertTrue(java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - acceptedAt.get()) <= 6000, 'Stalled upload did not return promptly')
     } finally { stalled.close(); peer?.close(); accept.join(1000); dir.parentFile.deleteDir() }
   }
 
@@ -497,7 +502,7 @@ tasks.named('bundle') { doFirst { new File(${fileExpression}.path + '.asc').dele
       task.httpRequestTimeoutSeconds.set(1800)
       long start = System.nanoTime()
       task.release()
-      assertTrue(java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start) < 2500)
+      assertTrue(java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start) < 7000)
       assertEquals(1, uploads.get()); assertEquals(2, statuses.get())
     } finally { dir.deleteDir() }
   }

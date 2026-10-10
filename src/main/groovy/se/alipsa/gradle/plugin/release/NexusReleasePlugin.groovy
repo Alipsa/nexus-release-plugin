@@ -209,7 +209,7 @@ class NexusReleasePlugin implements Plugin<Project> {
         boolean inOriginSection = false
         for (String line : config.split('\n')) {
             String trimmed = line.trim()
-            if (trimmed.equalsIgnoreCase('[remote "origin"]')) {
+            if (trimmed ==~ /(?i:\[remote) "origin"\]/) {
                 inOriginSection = true
             } else if (trimmed.startsWith('[')) {
                 inOriginSection = false

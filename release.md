@@ -24,8 +24,8 @@
   output from being bundled; generation reruns or restores from cache whenever its task is scheduled. This affects
   all publishing builds, including snapshots, and forces the publication signing task to re-sign every artifact;
   gpg-agent/pinentry may prompt for a passphrase on every publish.
-- `release` now rejects publications whose packaging is not `jar` with a clear message, instead of misleading
-  "missing .jar" errors. Packaging-aware support is planned for a later release.
+- `release` retains support for JAR-producing packaging, including `bundle`, `maven-plugin`, and `ejb`.
+  Other packaging without a main JAR receives a clear error instead of misleading "missing .jar" errors.
 - `release` validation now requires a signature and checksums for every artifact in the bundle, not only for a fixed
   set of JAR/POM files.
 - Behaviour change: `bundle` now depends only on the configured publication's

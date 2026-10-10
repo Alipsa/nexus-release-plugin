@@ -131,6 +131,7 @@ abstract class ReleaseTask extends DefaultTask {
                 logger.lifecycle("Status check failed (check ${check}/${checks}): ${e.message}")
             }
             if (state in ['PUBLISHING', 'PUBLISHED', 'FAILED']) break
+            if (lastError == null) logger.lifecycle("Deploy status is ${state} (check ${check}/${checks})")
         }
         if (state == 'PUBLISHING') {
             logger.lifecycle("Project $projectNameValue uploaded and validated successfully!")

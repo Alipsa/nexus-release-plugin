@@ -11,7 +11,8 @@ class GithubParsingTest {
         }
         assertNull(NexusReleasePlugin.parseGithubCoordinates('https://gitlab.com/o/r', 'https://api.github.com'))
         ['url=', '\turl = '].each {
-            assertEquals('https://github.com/o/r.git', NexusReleasePlugin.parseOriginUrlFromConfig("[REMOTE \"ORIGIN\"]\n${it}https://github.com/o/r.git\n[remote \"other\"]\nurl=x"))
+            assertEquals('https://github.com/o/r.git', NexusReleasePlugin.parseOriginUrlFromConfig("[REMOTE \"origin\"]\n${it}https://github.com/o/r.git\n[remote \"other\"]\nurl=x"))
         }
+        assertNull(NexusReleasePlugin.parseOriginUrlFromConfig('[remote "ORIGIN"]\nurl=https://github.com/o/r.git'))
     }
 }

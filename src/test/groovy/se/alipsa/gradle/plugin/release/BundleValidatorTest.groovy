@@ -129,6 +129,19 @@ class BundleValidatorTest {
   }
 
   @org.junit.jupiter.params.ParameterizedTest
+  @org.junit.jupiter.params.provider.ValueSource(strings = ['bundle', 'maven-plugin', 'ejb', 'custom-jar'])
+  void jarProducingPackagingRemainsSupported(String packaging) {
+    File zip = createBundleZip('com.example', 'demo', '1.0.0',
+        validPom().replace('<modelVersion>', "<packaging>${packaging}</packaging><modelVersion>"),
+        ['demo-1.0.0.jar', 'demo-1.0.0.jar.asc', 'demo-1.0.0-sources.jar',
+         'demo-1.0.0-sources.jar.asc', 'demo-1.0.0-javadoc.jar',
+         'demo-1.0.0-javadoc.jar.asc', 'demo-1.0.0.pom.asc'])
+    try {
+      assertEquals([], BundleValidator.validateBundle(zip, 'com.example', 'demo', '1.0.0', 'user', 'pass'))
+    } finally { zip.parentFile.deleteDir() }
+  }
+
+  @org.junit.jupiter.params.ParameterizedTest
   @org.junit.jupiter.params.provider.ValueSource(strings = ['war', 'pom'])
   void unsupportedPackagingReportsSingleCause(String packaging) {
     File zip = createBundleZip('com.example', 'demo', '1.0.0', validPom().replace('<modelVersion>', "<packaging>${packaging}</packaging><modelVersion>"), [])

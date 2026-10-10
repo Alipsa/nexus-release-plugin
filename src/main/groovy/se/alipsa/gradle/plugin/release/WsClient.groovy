@@ -1,6 +1,7 @@
 package se.alipsa.gradle.plugin.release
 
 import groovy.transform.CompileStatic
+import groovy.transform.PackageScope
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
@@ -79,9 +80,7 @@ abstract class WsClient {
         } catch (ExecutionException e) {
             Throwable cause = e.cause
             if (cause instanceof java.net.http.HttpTimeoutException) {
-                SocketTimeoutException timeout = new SocketTimeoutException("Request exceeded overall deadline of ${deadline / 1000.0}s: ${url}")
-                timeout.initCause(cause)
-                throw timeout
+                throw timeoutFailure((java.net.http.HttpTimeoutException) cause, deadline, url)
             }
             if (cause instanceof IOException) throw (IOException) cause
             throw new IOException('HTTP request failed', cause)
@@ -94,6 +93,15 @@ abstract class WsClient {
             throw new WsException(response.statusCode(), response.body())
         }
         [(BODY): response.body(), (RESPONSE_CODE): response.statusCode(), (HEADERS): response.headers().map()] as Map<String, Object>
+    }
+
+    @PackageScope
+    static SocketTimeoutException timeoutFailure(java.net.http.HttpTimeoutException cause, long deadline, String url) {
+        String message = cause instanceof java.net.http.HttpConnectTimeoutException ?
+            "Connect timed out: ${url}" : "Request exceeded overall deadline of ${deadline / 1000.0}s: ${url}"
+        SocketTimeoutException timeout = new SocketTimeoutException(message)
+        timeout.initCause(cause)
+        timeout
     }
 
     abstract String auth(String username, String password)

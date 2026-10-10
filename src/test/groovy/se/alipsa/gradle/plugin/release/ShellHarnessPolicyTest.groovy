@@ -6,6 +6,32 @@ import org.junit.jupiter.api.Test
 import static org.junit.jupiter.api.Assertions.*
 
 class ShellHarnessPolicyTest {
+    @Test void probesBashOnlyWhenHarnessRunsIncludingConfigurationCacheReuse() {
+        boolean bashPresent
+        try { bashPresent = new ProcessBuilder('bash', '-c', 'exit 0').start().waitFor() == 0 }
+        catch (IOException ignored) { bashPresent = false }
+        org.junit.jupiter.api.Assumptions.assumeTrue(bashPresent, 'Probe fixture needs Bash')
+        File fixture = File.createTempDir('shell-policy-lazy', '')
+        try {
+            new File(fixture, 'settings.gradle').text = "rootProject.name = 'shell-policy-lazy'"
+            new File(fixture, 'policy.gradle').bytes = new File(System.getProperty('shellHarnessPolicyScript')).bytes
+            new File(fixture, 'build.gradle').text = "tasks.register('shellHarness') { doLast { logger.lifecycle('harness ran') } }\ntasks.register('unrelated')\napply from: 'policy.gradle'\n"
+            File marker = new File(fixture, 'probed')
+            File bash = new File(fixture, 'bash-probe')
+            bash.text = '#!/usr/bin/env bash\ntouch "' + marker.absolutePath + '"\nexit 0\n'
+            assertTrue(bash.setExecutable(true))
+            def runner = GradleRunner.create().withProjectDir(fixture)
+            def args = ['--configuration-cache', "-PshellHarnessBash=${bash.absolutePath}".toString()]
+            runner.withArguments(['unrelated'] + args).build()
+            assertFalse(marker.exists(), 'Unrelated task must not probe Bash during configuration')
+            def reused = runner.withArguments(['unrelated'] + args).build()
+            assertTrue(reused.output.contains('Reusing configuration cache'))
+            assertFalse(marker.exists(), 'Unrelated cache hit must not probe Bash')
+            assertEquals(TaskOutcome.SUCCESS, runner.withArguments(['shellHarness'] + args).build().task(':shellHarness').outcome)
+            assertTrue(marker.exists(), 'Scheduled harness must probe Bash')
+        } finally { fixture.deleteDir() }
+    }
+
     @Test void missingBashSkipsLocallyAndFailsWhenRequired() {
         String source = System.getProperty('shellHarnessPolicyScript')
         assertNotNull(source, 'shellHarnessPolicyScript must be supplied by PolicyScriptArg')

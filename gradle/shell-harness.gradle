@@ -14,16 +14,17 @@ abstract class BashAvailable implements ValueSource<Boolean, BashAvailable.Param
         } catch (IOException ignored) { return false }
     }
 }
-def bashAvailable = providers.of(BashAvailable) { parameters.executable.set(bashExecutable) }.get()
+def bashAvailable = providers.of(BashAvailable) { parameters.executable.set(bashExecutable) }
 tasks.named('shellHarness') {
     if (it instanceof Exec) executable bashExecutable
     def policyLogger = logger
     onlyIf('Bash is available, or required by CI') {
-        if (!bashAvailable && required) {
+        boolean available = bashAvailable.get()
+        if (!available && required) {
             String message = "Bash is unavailable but requireShellHarness=true: ${bashExecutable}"
             policyLogger.error(message)
             throw new GradleException(message)
         }
-        bashAvailable
+        available
     }
 }

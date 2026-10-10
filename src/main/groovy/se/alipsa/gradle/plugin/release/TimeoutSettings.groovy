@@ -7,7 +7,6 @@ class TimeoutSettings {
         if (value < 1 || value > 86400) {
             throw new GradleException("${name} must be between 1 and 86400 seconds")
         }
-        Math.multiplyExact((long) value, 1000L)
         return value
     }
 }
