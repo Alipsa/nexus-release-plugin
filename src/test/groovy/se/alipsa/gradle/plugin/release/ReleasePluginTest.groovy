@@ -5,7 +5,6 @@ import okhttp3.mockwebserver.Dispatcher
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import okhttp3.mockwebserver.RecordedRequest
-import org.gradle.testkit.runner.GradleRunner
 import org.gradle.testkit.runner.BuildResult
 import org.gradle.testkit.runner.TaskOutcome
 import org.junit.jupiter.api.AfterAll
@@ -109,7 +108,11 @@ class ReleasePluginTest {
           artifactPath + '.pom',
           artifactPath +'.pom.asc',
           artifactPath +'.pom.md5',
-          artifactPath +'.pom.sha1'
+          artifactPath +'.pom.sha1',
+          artifactPath +'.module',
+          artifactPath +'.module.asc',
+          artifactPath +'.module.md5',
+          artifactPath +'.module.sha1'
       ]
 
       // Read actual ZIP entries
@@ -127,29 +130,16 @@ class ReleasePluginTest {
   }
 
   @Test
-  void releaseFailsBeforeUploadOnFilenameMismatch() throws IOException {
-    String buildScript = TestFixtures.createBuildScript().replace(
-        "version = '1.0.0'",
-        """version = '1.0.0'
-base {
-  archivesName = 'sieparser'
-}"""
-    )
-    File testProjectDir = TestFixtures.createTestProject(buildScript)
+  void bundleUsesCoordinatesWhenArchiveNameDiffers() throws IOException {
+    String script = TestFixtures.createBuildScript().replace("version = '1.0.0'", "version = '1.0.0'\nbase { archivesName = 'sieparser' }")
+    File dir = TestFixtures.createTestProject(script)
     try {
-      BuildResult result = MatrixRunner.create()
-          .withProjectDir(testProjectDir)
-          .withArguments("release")
-          .withPluginClasspath()
-          .forwardOutput()
-          .buildAndFail()
-
-      assertTrue(result.output.contains("Bundle validation failed."))
-      assertTrue(result.output.contains("Filename mismatch"))
-      assertTrue(result.output.contains("sieparser-1.0.0.jar"))
-    } finally {
-      cleanupTestProject(testProjectDir)
-    }
+      MatrixRunner.create().withProjectDir(dir).withArguments('bundle').withPluginClasspath().build()
+      new java.util.zip.ZipFile(new File(dir, 'build/zips/test-project-1.0.0-bundle.zip')).withCloseable { zip ->
+        assertTrue(zip.getEntry('com/example/test-project/1.0.0/test-project-1.0.0.jar') != null)
+        assertTrue(zip.entries().every { !it.name.contains('sieparser') })
+      }
+    } finally { cleanupTestProject(dir) }
   }
 
   @Test

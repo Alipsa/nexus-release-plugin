@@ -280,6 +280,46 @@ nexusReleasePlugin {
   }
 
   @Test @org.junit.jupiter.api.Timeout(120)
+  void releaseUploadDeadlineBoundsStalledWrite() {
+    ServerSocket stalled = new ServerSocket(0)
+    Socket peer = null
+    java.util.concurrent.atomic.AtomicLong acceptedAt = new java.util.concurrent.atomic.AtomicLong()
+    Thread accept = Thread.startDaemon { try { peer = stalled.accept(); acceptedAt.set(System.nanoTime()) } catch (IOException ignored) { } }
+    String script = TestFixtures.createBuildScript("http://127.0.0.1:${stalled.localPort}/api/v1") + """
+nexusReleasePlugin { httpRequestTimeoutSeconds = 1 }
+tasks.named('release') {
+  doFirst { new RandomAccessFile(bundleFile.get().asFile, 'rw').withCloseable { it.setLength(64L * 1024 * 1024) } }
+}
+"""
+    // Appending padding keeps the ZIP readable only within the ZIP trailing-data tolerance,
+    // so use a real large, incompressible artifact instead.
+    script = script.substring(0, script.indexOf("tasks.named('release')")) + '''
+tasks.register('largeArtifact') {
+  def output = layout.buildDirectory.file('large.bin')
+  outputs.file(output)
+  doLast {
+    output.get().asFile.parentFile.mkdirs()
+    output.get().asFile.withOutputStream { stream ->
+      def random = new Random(42)
+      byte[] bytes = new byte[65536]
+      1024.times { random.nextBytes(bytes); stream.write(bytes) }
+    }
+  }
+}
+publishing.publications.maven.artifact(layout.buildDirectory.file('large.bin')) {
+  classifier = 'large'; extension = 'bin'; builtBy tasks.named('largeArtifact')
+}
+'''
+    File dir = TestFixtures.createTestProject(script)
+    try {
+      def result = MatrixRunner.create().withProjectDir(dir).withArguments('release').withPluginClasspath().buildAndFail()
+      assertTrue(result.output.contains('Request exceeded overall deadline'), result.output)
+      assertTrue(acceptedAt.get() > 0)
+      assertTrue(java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - acceptedAt.get()) <= 2500, 'Stalled upload did not return promptly')
+    } finally { stalled.close(); peer?.close(); accept.join(1000); dir.parentFile.deleteDir() }
+  }
+
+  @Test @org.junit.jupiter.api.Timeout(120)
   void stalledStatusIsRetriedWithoutAnotherUpload() {
     java.util.concurrent.atomic.AtomicInteger uploads = new java.util.concurrent.atomic.AtomicInteger()
     java.util.concurrent.atomic.AtomicInteger statuses = new java.util.concurrent.atomic.AtomicInteger()
@@ -343,6 +383,78 @@ nexusReleasePlugin {
       assertTrue(state.lastPollingError.contains('Request exceeded overall deadline'))
       assertEquals(1, uploads.get()); assertEquals(2, polls.get())
     } finally { dir.deleteDir() }
+  }
+
+  @org.junit.jupiter.params.ParameterizedTest
+  @org.junit.jupiter.params.provider.ValueSource(strings = ['war', 'pom'])
+  @org.junit.jupiter.api.Timeout(120)
+  void packagingRejectedBeforeAnyUpload(String packaging) {
+    java.util.concurrent.atomic.AtomicInteger requests = new java.util.concurrent.atomic.AtomicInteger()
+    server.setDispatcher(new Dispatcher() {
+      @Override MockResponse dispatch(RecordedRequest request) {
+        requests.incrementAndGet(); return new MockResponse().setResponseCode(500)
+      }
+    })
+    String key = TestFixtures.generateTestPrivateKey()
+    String plugin = packaging == 'war' ? 'war' : 'java-platform'
+    String component = packaging == 'war' ? 'web' : 'javaPlatform'
+    String script = """
+plugins { id '${plugin}'; id 'se.alipsa.nexus-release-plugin' }
+group = 'com.example'
+version = '1.0.0'
+publishing {
+ publications {
+  maven(MavenPublication) {
+   from components.${component}
+   pom {
+    name = 'fixture'; description = 'fixture'; url = 'https://example.com'
+    licenses { license { name = 'MIT'; url = 'https://example.com/license' } }
+    developers { developer { id = 'tester' } }
+    scm { url = 'https://example.com'; connection = 'scm:git:https://example.com' }
+   }
+  }
+ }
+}
+signing { useInMemoryPgpKeys(null, '''${key}''', ''); sign publishing.publications.maven }
+nexusReleasePlugin {
+ mavenPublication = publishing.publications.maven
+ userName = 'u'; password = 'p'; nexusUrl = '${server.url('/api/v1')}'
+}
+"""
+    File dir = TestFixtures.createTestProject(script)
+    try {
+      def result = MatrixRunner.create().withProjectDir(dir).withPluginClasspath().withArguments('release').buildAndFail()
+      assertTrue(result.output.contains("Packaging '${packaging}' is not supported"), result.output)
+      assertFalse(result.output.contains('Missing required bundle entry'))
+      if (packaging == 'pom') assertTrue(result.output.contains('releaseAll'))
+      assertEquals(0, requests.get())
+    } finally { dir.parentFile.deleteDir() }
+  }
+
+  @org.junit.jupiter.params.ParameterizedTest
+  @org.junit.jupiter.params.provider.ValueSource(strings = ['module', 'zip'])
+  @org.junit.jupiter.api.Timeout(120)
+  void missingExtraSignatureFailsBeforeUpload(String kind) {
+    java.util.concurrent.atomic.AtomicInteger requests = new java.util.concurrent.atomic.AtomicInteger()
+    server.setDispatcher(new Dispatcher() {
+      @Override MockResponse dispatch(RecordedRequest request) { requests.incrementAndGet(); return new MockResponse().setResponseCode(500) }
+    })
+    String script = TestFixtures.createBuildScript(server.url('/api/v1').toString())
+    if (kind == 'zip') script += '''
+tasks.register('distZip', Zip) { archiveClassifier = 'dist'; from('src') }
+publishing.publications.maven.artifact(tasks.named('distZip'))
+'''
+    String fileExpression = kind == 'module' ? "moduleMetadataFile.get().asFile" : "tasks.named('distZip').get().archiveFile.get().asFile"
+    script += """
+tasks.named('bundle') { doFirst { new File(${fileExpression}.path + '.asc').delete() } }
+"""
+    File dir = TestFixtures.createTestProject(script)
+    try {
+      def result = MatrixRunner.create().withProjectDir(dir).withPluginClasspath().withArguments('release').buildAndFail()
+      assertTrue(result.output.contains('Missing signature for bundle entry:'), result.output)
+      assertTrue(result.output.contains(kind == 'module' ? 'test-project-1.0.0.module' : 'test-project-1.0.0-dist.zip'))
+      assertEquals(0, requests.get())
+    } finally { dir.parentFile.deleteDir() }
   }
 
   static abstract class ShortDeadlineReleaseTask extends ReleaseTask {

@@ -71,7 +71,7 @@ An unselected module can retain an already-released BOM pin with a warning.
 Normal JAR components require main, sources and Javadoc JARs plus POM. POM components require
 only a POM. An explicitly configured `sourcesAndJavadocRequired: false` policy preserves an
 aggregate JAR's existing main-JAR/POM publication set. All expected files need nonempty
-signatures. No Gradle metadata, repository bookkeeping or unrelated components are copied.
+signatures. Explicitly listed `.module` metadata and its signature are accepted. Repository bookkeeping and unrelated components are not copied.
 Source guards hash publication POMs and require a clean, unchanged Git revision with no
 assume-unchanged or skip-worktree index flags. Maven preparation requires a POSIX filesystem
 and bash, groovy and mvn; Windows users must use WSL. Repository and Portal URLs default to
@@ -96,3 +96,5 @@ Transient I/O errors are recorded and polling continues within that bound. Avail
 Central propagation remains separate from Portal publication. A failed record reports all
 component coordinates. Archive an `AVAILABLE` record before a new deployment; manually
 reconcile every unresolved record rather than deleting it to retry.
+
+CentralPortalClient uploads and deployment status checks use default connect (30 s) and caller deadlines (1800 s uploads, 60 s small calls). The single-publication extension timeout overrides do not apply here. Separate PublicationStatus and HEAD availability checks retain their existing behavior without this overall deadline.

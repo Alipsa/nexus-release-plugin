@@ -23,7 +23,7 @@ class CombinedBundle {
             }
             if (!(publication.files as Set).containsAll(required)) throw new IllegalArgumentException('Manifest omits required publication artifacts')
             publication.files.each { String name ->
-                if (!(name ==~ /[A-Za-z0-9_.+-]+/) || !name.startsWith(prefix) || !(name.endsWith('.jar') || name.endsWith('.pom'))) {
+                if (!(name ==~ /[A-Za-z0-9_.+-]+/) || !name.startsWith(prefix) || !(name.endsWith('.jar') || name.endsWith('.pom') || name.endsWith('.module'))) {
                     throw new IllegalArgumentException('Unsafe or unsupported artifact filename')
                 }
                 String path = "${coordinate.path()}/${name}"

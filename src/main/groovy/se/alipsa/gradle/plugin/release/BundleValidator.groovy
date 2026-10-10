@@ -40,18 +40,27 @@ class BundleValidator {
 
         String basePath = "${groupId.replace('.', '/')}/${artifactId}/${version}/"
         String artifactPrefix = "${artifactId}-${version}"
-        List<String> requiredEntries = [
-            "${basePath}${artifactPrefix}.pom",
-            "${basePath}${artifactPrefix}.pom.asc",
-            "${basePath}${artifactPrefix}.jar",
-            "${basePath}${artifactPrefix}.jar.asc",
-            "${basePath}${artifactPrefix}-sources.jar",
-            "${basePath}${artifactPrefix}-sources.jar.asc",
-            "${basePath}${artifactPrefix}-javadoc.jar",
-            "${basePath}${artifactPrefix}-javadoc.jar.asc"
-        ]
+        List<String> requiredEntries = ['.pom', '.jar', '-sources.jar', '-javadoc.jar'].collect {
+            "${basePath}${artifactPrefix}${it}".toString()
+        }
 
         try (ZipFile zip = new ZipFile(zipFile)) {
+            ZipEntry pomEntry = zip.getEntry("${basePath}${artifactPrefix}.pom")
+            if (pomEntry != null) {
+                GPathResult pom
+                try {
+                    pom = new XmlSlurper(false, false).parseText(zip.getInputStream(pomEntry).getText('UTF-8'))
+                } catch (Exception failure) {
+                    errors.add("Failed to parse POM ${pomEntry.name}: ${failure.message}")
+                    return
+                }
+                String packaging = pom.packaging.text() ?: 'jar'
+                if (packaging != 'jar') {
+                    errors.add("Packaging '${packaging}' is not supported by the release task in this version; only jar-packaged publications (optionally with additional artifacts) can be released" +
+                        (packaging == 'pom' ? '. For pom-packaged publications such as BOMs, use the combined release (releaseAll)' : ''))
+                    return
+                }
+            }
             Set<String> names = zip.entries().collect { ZipEntry e -> e.name } as Set<String>
             requiredEntries.each { String requiredEntry ->
                 if (!names.contains(requiredEntry)) {
@@ -59,6 +68,16 @@ class BundleValidator {
                 }
             }
 
+            names.findAll { String name ->
+                !name.endsWith('/') && !['.asc', '.md5', '.sha1', '.sha256', '.sha512'].any { name.endsWith(it) }
+            }.each { String name ->
+                ['.asc', '.md5', '.sha1'].each { String suffix ->
+                    ZipEntry companion = zip.getEntry(name + suffix)
+                    String kind = suffix == '.asc' ? 'signature' : 'checksum'
+                    if (companion == null) errors.add("Missing ${kind} for bundle entry: ${name}")
+                    else if (zip.getInputStream(companion).withCloseable { it.read() } == -1) errors.add("Empty ${kind} for bundle entry: ${name}")
+                }
+            }
             validateFileNameConsistency(names, artifactPrefix, artifactId, errors)
             validatePom(zip, "${basePath}${artifactPrefix}.pom", errors)
         } catch (IOException e) {
@@ -75,7 +94,7 @@ class BundleValidator {
             if (!fileName.startsWith(artifactPrefix)) {
                 errors.add(
                     """Filename mismatch: '${fileName}' does not start with '${artifactPrefix}'
-  -> Make sure base.archivesName = '${artifactId}' matches artifactId = '${artifactId}'""".stripIndent()
+  -> Check that the publication and artifact coordinates match '${artifactId}'""".stripIndent()
                 )
             }
         }
@@ -89,6 +108,19 @@ class BundleValidator {
         }
 
         String pomText = zip.getInputStream(pomEntry).getText('UTF-8')
+        if (pomText.contains('published-with-gradle-metadata')) {
+            String modulePath = expectedPomPath.substring(0, expectedPomPath.length() - '.pom'.length()) + '.module'
+            [modulePath, modulePath + '.asc'].each { String path ->
+                // A present module's signature is already checked by the generic rule.
+                if (path.endsWith('.asc') && zip.getEntry(modulePath) != null) return
+                ZipEntry entry = zip.getEntry(path)
+                if (entry == null || entry.isDirectory()) {
+                    errors.add("Missing required bundle entry advertised by POM Gradle metadata marker: ${path}")
+                } else if (zip.getInputStream(entry).withCloseable { it.read() } == -1) {
+                    errors.add("Empty required bundle entry advertised by POM Gradle metadata marker: ${path}")
+                }
+            }
+        }
         validatePomMetadata(pomText, expectedPomPath, errors)
     }
 

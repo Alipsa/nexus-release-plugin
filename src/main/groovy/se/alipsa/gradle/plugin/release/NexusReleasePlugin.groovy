@@ -3,6 +3,9 @@ package se.alipsa.gradle.plugin.release
 import groovy.transform.CompileStatic
 import org.gradle.api.Plugin
 import org.gradle.api.Project
+import org.gradle.api.GradleException
+import org.gradle.api.publish.tasks.GenerateModuleMetadata
+import org.gradle.api.publish.maven.MavenArtifact
 import org.gradle.api.publish.PublishingExtension
 import org.gradle.api.publish.maven.MavenPublication
 import org.gradle.api.tasks.TaskProvider
@@ -24,8 +27,26 @@ class NexusReleasePlugin implements Plugin<Project> {
         project.pluginManager.apply('signing')
         project.pluginManager.apply('maven-publish')
 
+        def selectedPublication = extension.mavenPublication.orElse(project.provider {
+            throw new GradleException('nexusReleasePlugin.mavenPublication must be set')
+        })
+        TaskProvider<ClearModuleMetadataTask> clear = project.tasks.register('clearModuleMetadata', ClearModuleMetadataTask)
+        project.tasks.withType(GenerateModuleMetadata).configureEach { GenerateModuleMetadata metadata ->
+            metadata.dependsOn(extension.mavenPublication.map { MavenPublication pub ->
+                metadata.name == "generateMetadataFileFor${pub.name.capitalize()}Publication" ? [clear] : []
+            })
+        }
+        // Resolve configured output paths as detached Files, avoiding a cleanup -> generation cycle.
+        def metadataPath = selectedPublication.map { MavenPublication pub ->
+            GenerateModuleMetadata metadata = project.tasks.findByName("generateMetadataFileFor${pub.name.capitalize()}Publication") as GenerateModuleMetadata
+            metadata == null ? null : metadata.outputFile.get().asFile
+        }
+        clear.configure { it.metadataFile.set(project.layout.file(metadataPath)) }
+
         TaskProvider<BundleTask> bundleTask = project.tasks.register('bundle', BundleTask) { BundleTask task ->
-            task.dependsOn "publishToMavenLocal"
+            task.dependsOn(selectedPublication.map { MavenPublication pub ->
+                "publish${pub.name.capitalize()}PublicationToMavenLocal".toString()
+            })
 
             // Wire providers to extract publication data at configuration time
             task.groupId.set(extension.mavenPublication.map { it.groupId })
@@ -37,8 +58,20 @@ class NexusReleasePlugin implements Plugin<Project> {
                 extension.mavenPublication.map { "publications/${it.name}" }
             ))
 
-            task.artifactFiles.set(extension.mavenPublication.map { pub ->
-                pub.artifacts.collect { it.file }
+            task.artifactEntries.set(selectedPublication.map { MavenPublication pub ->
+                Map<String, File> entries = [:]
+                pub.artifacts.each { MavenArtifact artifact ->
+                    String classifier = artifact.classifier ? "-${artifact.classifier}" : ''
+                    String name = "${pub.artifactId}-${pub.version}${classifier}.${artifact.extension}"
+                    if (entries.put(name, artifact.file) != null) throw new GradleException("Duplicate bundle entry: ${name}")
+                }
+                entries
+            })
+            task.artifactInputFiles.from(task.artifactEntries.map { entries -> entries.values().collectMany { File file -> [file, new File(file.path + '.asc')] } })
+            task.artifactInputFiles.builtBy(selectedPublication.map { it.artifacts })
+            task.moduleMetadataFile.set(project.layout.file(metadataPath))
+            task.moduleMetadataInput.from(metadataPath.map { File file ->
+                [file, new File(file.path + '.asc')]
             })
 
             task.bundleFile.set(project.layout.buildDirectory.file(

@@ -1,8 +1,8 @@
 # nexus-release-plugin
 
 [![CI](https://github.com/Alipsa/nexus-release-plugin/actions/workflows/ci.yml/badge.svg)](https://github.com/Alipsa/nexus-release-plugin/actions/workflows/ci.yml)
-[![Java](https://img.shields.io/badge/Java-17+-blue)](https://docs.oracle.com/en/java/javase/17/)
-[![Groovy](https://img.shields.io/badge/Groovy-4.0.30-blue)](https://groovy-lang.org/)
+[![Java](https://img.shields.io/badge/Java-17%20%26%2021-blue)](https://docs.oracle.com/en/java/javase/17/)
+[![Groovy](https://img.shields.io/badge/Groovy-4.0.31-blue)](https://groovy-lang.org/)
 [![Javadoc](https://javadoc.io/badge2/se.alipsa.nexus-release-plugin/se.alipsa.nexus-release-plugin.gradle.plugin/javadoc.svg)](https://javadoc.io/doc/se.alipsa.nexus-release-plugin/se.alipsa.nexus-release-plugin.gradle.plugin)
 
 Automates the release process to Sonatype Central.
@@ -90,7 +90,7 @@ nexusReleasePlugin {
 ```
 
 The `release` task waits for Central Portal to process the uploaded deployment before it checks status.
-The defaults are 10 retries, a 10 second interval between checks, and a 10 second initial delay.
+The defaults are one initial check plus 10 additional checks, a 10 second interval between checks, and a 10 second initial delay.
 You can tune those values if Central Portal is taking longer to validate or publish your bundle:
 
 ```groovy
@@ -98,6 +98,8 @@ nexusReleasePlugin {
    statusCheckRetries = 30
    statusCheckIntervalSeconds = 20
    initialStatusCheckDelaySeconds = 20
+   httpConnectTimeoutSeconds = 30
+   httpRequestTimeoutSeconds = 1800
 }
 ```
 ## The latestMavenVersions task
@@ -230,3 +232,7 @@ MIT License - see [LICENSE](LICENSE) for details.
 `releaseAll` uses the default client timeouts. Its separate `PublicationStatus` and HEAD availability checks do not receive this overall deadline. Runtime testing covers JDK 17 and 21 with Gradle 8.13 and 9.4.0; compilation targets Java 17. Other daemon JDKs are outside the verified support matrix.
 
 `statusCheckRetries` is the number of additional checks after the first one. Transient errors consume a check and are retried within that budget. Authentication and permission errors fail immediately. Exhaustion reports an unknown or pending deployment that may still publish, with a Portal link.
+
+Bundles use Maven coordinate names and include all artifacts of the selected jar-packaged publication, including classified ZIPs and generated Gradle Module Metadata. Every primary entry needs a nonempty signature and MD5/SHA-1 checksums. Other packaging is rejected by `release`; use `releaseAll` for pom-packaged publications. `bundle` installs only the selected publication to Maven local.
+
+The selected publication's module metadata and adjacent signature are cleared before metadata generation, including plain `publishToMavenLocal`, publishing to other repositories, and snapshots. Metadata regenerates or restores from cache. Deleting its signature forces the publication signing task to re-sign every artifact; gpg-agent/pinentry may prompt on every publish even when signing previously stayed up to date. Disable generation with `enabled = false` to omit metadata. Skipping it with `onlyIf` while the POM advertises metadata fails before upload.
