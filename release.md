@@ -31,6 +31,11 @@
 - Behaviour change: `bundle` now depends only on the configured publication's
   `publish<Name>PublicationToMavenLocal` task instead of `publishToMavenLocal`, so other publications are no
   longer installed to `~/.m2` as a side effect.
+- Fix: `latestGithubRelease` now detects `origin` remotes that contain user info or tokens
+  (e.g. `https://x-access-token:...@github.com/...`), and `url=` entries written without spaces.
+- Fix: Central Portal credentials are encoded as UTF-8 regardless of the platform charset.
+- `publish.sh` validates Plugin Portal publication before the Central `release`, then publishes to the Portal,
+  stopping on the first failure. A Portal failure after Central release requires retrying only Portal publication.
 
 ## Ver 2.2.0, 2026-05-01
 - fixed groovy doc generation

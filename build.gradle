@@ -137,11 +137,22 @@ afterEvaluate {
   }
 }
 
+abstract class PolicyScriptArg implements CommandLineArgumentProvider {
+  @InputFile @PathSensitive(PathSensitivity.NONE)
+  abstract RegularFileProperty getScript()
+  @Override Iterable<String> asArguments() {
+    ["-DshellHarnessPolicyScript=${script.get().asFile.absolutePath}".toString()]
+  }
+}
+
 def selectedTestJavaVersion = providers.gradleProperty('testJavaVersion').getOrElse('17')
 test {
-  useJUnitPlatform()
+  useJUnitPlatform { excludeTags 'non-utf8-charset' }
   javaLauncher = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(selectedTestJavaVersion) }
   systemProperty 'testJavaVersion', selectedTestJavaVersion
+  def policyArg = objects.newInstance(PolicyScriptArg)
+  policyArg.script.set(layout.projectDirectory.file('gradle/shell-harness.gradle'))
+  jvmArgumentProviders.add(policyArg)
   // Parallelize at JVM-fork level to keep TestKit tests isolated per process.
   maxParallelForks = 2
   // Pass system properties from command line to tests
@@ -181,3 +192,19 @@ tasks.named("dependencyUpdates").configure {
     }
   }
 }
+
+
+tasks.register('charsetTest', Test) {
+  testClassesDirs = sourceSets.test.output.classesDirs
+  classpath = sourceSets.test.runtimeClasspath
+  javaLauncher = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(17) }
+  useJUnitPlatform { includeTags 'non-utf8-charset' }
+  jvmArgs '-Dfile.encoding=ISO-8859-1'
+}
+tasks.register('shellHarness', Exec) {
+  inputs.files('publish.sh', 'src/test/shell/publish-harness.sh', 'gradle/shell-harness.gradle')
+  args layout.projectDirectory.file('src/test/shell/publish-harness.sh').asFile.absolutePath,
+      layout.projectDirectory.file('publish.sh').asFile.absolutePath
+}
+apply from: 'gradle/shell-harness.gradle'
+tasks.named('check') { dependsOn 'charsetTest', 'shellHarness' }

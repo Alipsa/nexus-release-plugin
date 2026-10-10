@@ -1,5 +1,6 @@
 package se.alipsa.gradle.plugin.release
 
+import java.nio.charset.StandardCharsets
 import groovy.json.JsonSlurper
 import groovy.transform.CompileStatic
 import org.gradle.api.GradleException
@@ -45,7 +46,7 @@ class CentralPortalClient extends WsClient {
     }
 
     String auth(String username, String password) {
-        return "Bearer " + Base64.getEncoder().encodeToString((username + ":" + password).getBytes())
+        return "Bearer " + Base64.getEncoder().encodeToString((username + ":" + password).getBytes(StandardCharsets.UTF_8))
     }
 
     /**

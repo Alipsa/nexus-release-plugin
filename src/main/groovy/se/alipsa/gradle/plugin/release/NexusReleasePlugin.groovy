@@ -6,6 +6,7 @@ import org.gradle.api.Project
 import org.gradle.api.GradleException
 import org.gradle.api.publish.tasks.GenerateModuleMetadata
 import org.gradle.api.publish.maven.MavenArtifact
+import groovy.transform.PackageScope
 import org.gradle.api.publish.PublishingExtension
 import org.gradle.api.publish.maven.MavenPublication
 import org.gradle.api.tasks.TaskProvider
@@ -203,22 +204,24 @@ class NexusReleasePlugin implements Plugin<Project> {
         }
     }
 
-    private static String parseOriginUrlFromConfig(String config) {
+    @PackageScope
+    static String parseOriginUrlFromConfig(String config) {
         boolean inOriginSection = false
         for (String line : config.split('\n')) {
             String trimmed = line.trim()
-            if (trimmed == '[remote "origin"]') {
+            if (trimmed.equalsIgnoreCase('[remote "origin"]')) {
                 inOriginSection = true
             } else if (trimmed.startsWith('[')) {
                 inOriginSection = false
-            } else if (inOriginSection && trimmed.startsWith('url =')) {
+            } else if (inOriginSection && trimmed ==~ /(?i)url\s*=.*/) {
                 return trimmed.substring(trimmed.indexOf('=') + 1).trim()
             }
         }
         return null
     }
 
-    private static String parseGithubCoordinates(String remoteUrl, String apiBaseUrl) {
+    @PackageScope
+    static String parseGithubCoordinates(String remoteUrl, String apiBaseUrl) {
         if (!remoteUrl) return null
         String apiHost = URI.create(apiBaseUrl).host ?: 'api.github.com'
         // For api.github.com the remote host is github.com; for Enterprise the api and git hosts match
@@ -229,7 +232,7 @@ class NexusReleasePlugin implements Plugin<Project> {
         Matcher sshUrl = Pattern.compile('^ssh://(?:[^@]+@)?([^/:]+)(?::\\d+)?/(.+?)(?:\\.git)?$').matcher(remoteUrl)
         if (sshUrl.matches() && sshUrl.group(1) == expectedRemoteHost) return sshUrl.group(2)
         // Strip port from remote host so http://localhost:8080/x matches API host 'localhost'
-        Matcher https = Pattern.compile('^https?://([^/:]+)(?::\\d+)?/(.+?)(?:\\.git)?$').matcher(remoteUrl)
+        Matcher https = Pattern.compile('^https?://(?:[^@/]+@)?([^/:]+)(?::\\d+)?/(.+?)(?:\\.git)?/?$').matcher(remoteUrl)
         if (https.matches() && https.group(1) == expectedRemoteHost) return https.group(2)
         return null
     }
