@@ -208,6 +208,10 @@ nexusReleasePlugin {
 
 An explicit `githubRepo` always takes priority over auto-detection.
 
+## Combined releases
+
+The opt-in `se.alipsa.nexus-release-all` support plugin adds manifest planning, guarded preparation, combined bundling and one-upload deployment recovery. See [the task contract and workflow](combined-releases.md). Existing single-module releases remain available.
+
 ## Building the Plugin
 
 ```bash

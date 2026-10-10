@@ -68,19 +68,18 @@ abstract class WsClient {
     conn.setRequestProperty("Accept", "application/json")
     conn.setRequestProperty("Authorization", auth(username, password))
 
+    byte[] prefix = ("${twoHyphens}${boundary}${lineEnd}" +
+        "Content-Disposition: form-data; name=\"${fieldName}\"; filename=\"${file.name}\"${lineEnd}" +
+        "Content-Type: application/zip${lineEnd}${lineEnd}").getBytes('UTF-8')
+    byte[] suffix = "${lineEnd}${twoHyphens}${boundary}--${lineEnd}".getBytes('UTF-8')
+    conn.setFixedLengthStreamingMode(file.length() + prefix.length + suffix.length)
     try {
       conn.connect()
-
-      def out = new DataOutputStream(conn.outputStream)
-      out.writeBytes("${twoHyphens}${boundary}${lineEnd}")
-      out.writeBytes("Content-Disposition: form-data; name=\"${fieldName}\"; filename=\"${file.name}\"${lineEnd}")
-      out.writeBytes("Content-Type: application/zip${lineEnd}")
-      out.writeBytes(lineEnd)
-      out.write(file.bytes)
-      out.writeBytes(lineEnd)
-      out.writeBytes("${twoHyphens}${boundary}--${lineEnd}")
-      out.flush()
-      out.close()
+      try (OutputStream out = conn.outputStream; InputStream input = new FileInputStream(file)) {
+        out.write(prefix)
+        input.transferTo(out)
+        out.write(suffix)
+      }
 
       int responseCode = conn.responseCode
       ensureSuccess(responseCode, '', conn)

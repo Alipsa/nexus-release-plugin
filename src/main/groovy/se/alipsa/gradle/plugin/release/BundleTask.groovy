@@ -16,8 +16,6 @@ import org.gradle.api.tasks.PathSensitivity
 import org.gradle.api.tasks.TaskAction
 import org.gradle.work.DisableCachingByDefault
 
-import java.security.DigestOutputStream
-import java.security.MessageDigest
 import java.nio.charset.StandardCharsets
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
@@ -170,12 +168,7 @@ abstract class BundleTask extends DefaultTask {
     }
 
     private static String checksumFor(File file, String algo) {
-        def digest = MessageDigest.getInstance(algo)
-        file.withInputStream { is ->
-            new DigestOutputStream(OutputStream.nullOutputStream(), digest)
-                .withCloseable { dos -> is.transferTo(dos) }
-        }
-        digest.digest().encodeHex().toString()
+        ReleaseChecksums.checksum(file, algo)
     }
 
     private static String checksumExtension(String algo) {

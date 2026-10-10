@@ -84,7 +84,7 @@ class CentralPortalClient extends WsClient {
             body = new JsonSlurper().parseText(result.get(BODY) as String) as Map
         } catch (Exception e) {
             String responseBody = result.get(BODY) as String
-            throw new GradleException("Failed to parse deployment status response for deployment ID ${deploymentId}: ${e.message}. Body: ${responseBody}")
+            throw new IOException("Failed to parse deployment status response for deployment ID ${deploymentId}: ${e.message}. Body: ${responseBody}", e)
         }
         return body as Map<String, Object>
     }
@@ -97,14 +97,14 @@ class CentralPortalClient extends WsClient {
         String body = e.body?.trim()
         switch (e.statusCode) {
             case 401:
-                return new GradleException("Authentication failed - check sonatypeUsername/sonatypePassword")
+                return new GradleException("Authentication failed - check sonatypeUsername/sonatypePassword", e)
             case 403:
-                return new GradleException("Forbidden - is the namespace verified in your Central Portal account?")
+                return new GradleException("Forbidden - is the namespace verified in your Central Portal account?", e)
             case 422:
-                return new GradleException("Rejected by Central Portal - see body for details: ${body}")
+                return new GradleException("Rejected by Central Portal - see body for details: ${body}", e)
             default:
                 if (e.statusCode >= 500) {
-                    return new GradleException("Central Portal returned ${e.statusCode} - try again later")
+                    return new GradleException("Central Portal returned ${e.statusCode} - try again later", e)
                 }
                 return new GradleException("Upload failed with HTTP ${e.statusCode}: ${body}", e)
         }
