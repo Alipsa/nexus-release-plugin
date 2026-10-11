@@ -11,6 +11,8 @@ import javax.inject.Inject
 @CompileStatic
 class NexusReleasePluginExtension {
 
+    final Property<Integer> httpConnectTimeoutSeconds
+    final Property<Integer> httpRequestTimeoutSeconds
     final Property<String> nexusUrl
     final Property<String> metadataBaseUrl
     final Property<String> userName
@@ -31,6 +33,8 @@ class NexusReleasePluginExtension {
 
     @Inject
     NexusReleasePluginExtension(ObjectFactory objects) {
+        httpConnectTimeoutSeconds = objects.property(Integer).convention(30)
+        httpRequestTimeoutSeconds = objects.property(Integer).convention(1800)
         userName = objects.property(String)
         password = objects.property(String)
         mavenPublication = objects.property(MavenPublication)
@@ -43,6 +47,9 @@ class NexusReleasePluginExtension {
         githubToken = objects.property(String)
         githubRepo = objects.property(String)
     }
+
+    void setHttpConnectTimeoutSeconds(Integer seconds) { httpConnectTimeoutSeconds.set(seconds) }
+    void setHttpRequestTimeoutSeconds(Integer seconds) { httpRequestTimeoutSeconds.set(seconds) }
 
     void setNexusUrl(String url) {
         nexusUrl.set(url)

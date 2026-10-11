@@ -5,7 +5,6 @@ import okhttp3.mockwebserver.Dispatcher
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import okhttp3.mockwebserver.RecordedRequest
-import org.gradle.testkit.runner.GradleRunner
 import org.gradle.testkit.runner.BuildResult
 import org.gradle.testkit.runner.TaskOutcome
 import org.junit.jupiter.api.AfterAll
@@ -36,7 +35,7 @@ class ReleasePluginTest {
     File testProjectDir = TestFixtures.createTestProject()
     try {
       // First run - should store configuration cache
-      BuildResult result1 = GradleRunner.create()
+      BuildResult result1 = MatrixRunner.create()
           .withProjectDir(testProjectDir)
           .withArguments("bundle", "--configuration-cache")
           .withPluginClasspath()
@@ -52,7 +51,7 @@ class ReleasePluginTest {
       new File(testProjectDir, "build/libs").deleteDir()
 
       // Second run - should reuse configuration cache
-      BuildResult result2 = GradleRunner.create()
+      BuildResult result2 = MatrixRunner.create()
           .withProjectDir(testProjectDir)
           .withArguments("bundle", "--configuration-cache")
           .withPluginClasspath()
@@ -73,7 +72,7 @@ class ReleasePluginTest {
     File testProjectDir = TestFixtures.createTestProject()
     try {
       // Run build
-      BuildResult result = GradleRunner.create()
+      BuildResult result = MatrixRunner.create()
           .withProjectDir(testProjectDir)
           .withArguments("bundle")
           .withPluginClasspath()
@@ -109,7 +108,11 @@ class ReleasePluginTest {
           artifactPath + '.pom',
           artifactPath +'.pom.asc',
           artifactPath +'.pom.md5',
-          artifactPath +'.pom.sha1'
+          artifactPath +'.pom.sha1',
+          artifactPath +'.module',
+          artifactPath +'.module.asc',
+          artifactPath +'.module.md5',
+          artifactPath +'.module.sha1'
       ]
 
       // Read actual ZIP entries
@@ -127,29 +130,16 @@ class ReleasePluginTest {
   }
 
   @Test
-  void releaseFailsBeforeUploadOnFilenameMismatch() throws IOException {
-    String buildScript = TestFixtures.createBuildScript().replace(
-        "version = '1.0.0'",
-        """version = '1.0.0'
-base {
-  archivesName = 'sieparser'
-}"""
-    )
-    File testProjectDir = TestFixtures.createTestProject(buildScript)
+  void bundleUsesCoordinatesWhenArchiveNameDiffers() throws IOException {
+    String script = TestFixtures.createBuildScript().replace("version = '1.0.0'", "version = '1.0.0'\nbase { archivesName = 'sieparser' }")
+    File dir = TestFixtures.createTestProject(script)
     try {
-      BuildResult result = GradleRunner.create()
-          .withProjectDir(testProjectDir)
-          .withArguments("release")
-          .withPluginClasspath()
-          .forwardOutput()
-          .buildAndFail()
-
-      assertTrue(result.output.contains("Bundle validation failed."))
-      assertTrue(result.output.contains("Filename mismatch"))
-      assertTrue(result.output.contains("sieparser-1.0.0.jar"))
-    } finally {
-      cleanupTestProject(testProjectDir)
-    }
+      MatrixRunner.create().withProjectDir(dir).withArguments('bundle').withPluginClasspath().build()
+      new java.util.zip.ZipFile(new File(dir, 'build/zips/test-project-1.0.0-bundle.zip')).withCloseable { zip ->
+        assertTrue(zip.getEntry('com/example/test-project/1.0.0/test-project-1.0.0.jar') != null)
+        assertTrue(zip.entries().every { !it.name.contains('sieparser') })
+      }
+    } finally { cleanupTestProject(dir) }
   }
 
   @Test
@@ -162,7 +152,7 @@ base {
     )
     File testProjectDir = TestFixtures.createTestProject(buildScript)
     try {
-      BuildResult result = GradleRunner.create()
+      BuildResult result = MatrixRunner.create()
           .withProjectDir(testProjectDir)
           .withArguments("release")
           .withPluginClasspath()
@@ -187,7 +177,7 @@ base {
 
     File testProjectDir = TestFixtures.createTestProject(buildScript)
     try {
-      BuildResult result = GradleRunner.create()
+      BuildResult result = MatrixRunner.create()
           .withProjectDir(testProjectDir)
           .withArguments("release")
           .withPluginClasspath()
@@ -222,7 +212,7 @@ base {
 
     File testProjectDir = TestFixtures.createTestProject(buildScript)
     try {
-      BuildResult result = GradleRunner.create()
+      BuildResult result = MatrixRunner.create()
           .withProjectDir(testProjectDir)
           .withArguments('printReleasePollingConfig')
           .withPluginClasspath()
@@ -248,7 +238,7 @@ base {
     String metadataBaseUrl = server.url('/maven2').toString()
     File testProjectDir = TestFixtures.createMultiModuleProject(metadataBaseUrl)
     try {
-      BuildResult firstRun = GradleRunner.create()
+      BuildResult firstRun = MatrixRunner.create()
           .withProjectDir(testProjectDir)
           .withArguments('latestMavenVersions', '--configuration-cache')
           .withPluginClasspath()
@@ -261,7 +251,7 @@ base {
       assertTrue(firstRun.output.contains('multi-module-project: com.example:multi-module-project:1.2.0'))
       assertTrue(firstRun.output.contains('Configuration cache entry stored'))
 
-      BuildResult secondRun = GradleRunner.create()
+      BuildResult secondRun = MatrixRunner.create()
           .withProjectDir(testProjectDir)
           .withArguments('latestMavenVersions', '--configuration-cache')
           .withPluginClasspath()
@@ -286,7 +276,7 @@ base {
     String remoteUrl = "${server.url('/')}${repoSlug}.git"
     File testProjectDir = TestFixtures.createGithubProject(githubApiBaseUrl, repoSlug, remoteUrl)
     try {
-      BuildResult firstRun = GradleRunner.create()
+      BuildResult firstRun = MatrixRunner.create()
           .withProjectDir(testProjectDir)
           .withArguments('latestGithubRelease', '--configuration-cache')
           .withPluginClasspath()
@@ -298,7 +288,7 @@ base {
           "Expected output to contain '${repoSlug}: ${expectedTag}' but was:\n${firstRun.output}")
       assertTrue(firstRun.output.contains('Configuration cache entry stored'))
 
-      BuildResult secondRun = GradleRunner.create()
+      BuildResult secondRun = MatrixRunner.create()
           .withProjectDir(testProjectDir)
           .withArguments('latestGithubRelease', '--configuration-cache')
           .withPluginClasspath()
@@ -322,7 +312,7 @@ base {
     String remoteUrl = "${server.url('/')}${repoSlug}.git"
     File testProjectDir = TestFixtures.createGithubProject(githubApiBaseUrl, repoSlug, remoteUrl)
     try {
-      BuildResult result = GradleRunner.create()
+      BuildResult result = MatrixRunner.create()
           .withProjectDir(testProjectDir)
           .withArguments('latestGithubRelease')
           .withPluginClasspath()
@@ -348,7 +338,7 @@ base {
     String enterpriseRemote = "${server.url('/')}${repoSlug}.git"
     File testProjectDir = TestFixtures.createGithubProject(githubApiBaseUrl, repoSlug, enterpriseRemote)
     try {
-      BuildResult result = GradleRunner.create()
+      BuildResult result = MatrixRunner.create()
           .withProjectDir(testProjectDir)
           .withArguments('latestGithubRelease')
           .withPluginClasspath()
@@ -372,7 +362,7 @@ base {
     String githubApiBaseUrl = server.url('/').toString()
     File testProjectDir = TestFixtures.createGithubProjectWithExplicitRepo(githubApiBaseUrl, repoSlug)
     try {
-      BuildResult result = GradleRunner.create()
+      BuildResult result = MatrixRunner.create()
           .withProjectDir(testProjectDir)
           .withArguments('latestGithubRelease')
           .withPluginClasspath()
@@ -399,7 +389,7 @@ base {
     File testProjectDir = TestFixtures.createGithubProjectWithFakeGh(githubApiBaseUrl, repoSlug, fakeToken, remoteUrl)
     try {
       String ghBinPath = new File(testProjectDir, 'bin/gh').absolutePath
-      BuildResult result = GradleRunner.create()
+      BuildResult result = MatrixRunner.create()
           .withProjectDir(testProjectDir)
           .withArguments("-Dse.alipsa.nexus-release-plugin.ghBin=${ghBinPath}", 'latestGithubRelease')
           .withPluginClasspath()
@@ -422,7 +412,7 @@ base {
     File testProjectDir = TestFixtures.createGithubProject(
         'https://api.github.com', repoSlug, "https://gitlab.com/${repoSlug}.git")
     try {
-      BuildResult result = GradleRunner.create()
+      BuildResult result = MatrixRunner.create()
           .withProjectDir(testProjectDir)
           .withArguments('latestGithubRelease')
           .withPluginClasspath()
@@ -448,7 +438,7 @@ base {
     String sshRemote = "ssh://git@localhost:${server.port}/${repoSlug}.git"
     File testProjectDir = TestFixtures.createGithubProject(githubApiBaseUrl, repoSlug, sshRemote)
     try {
-      BuildResult result = GradleRunner.create()
+      BuildResult result = MatrixRunner.create()
           .withProjectDir(testProjectDir)
           .withArguments('latestGithubRelease')
           .withPluginClasspath()

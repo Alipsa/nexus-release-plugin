@@ -2,7 +2,6 @@ package se.alipsa.gradle.plugin.release
 
 import groovy.ant.AntBuilder
 import org.gradle.testkit.runner.BuildResult
-import org.gradle.testkit.runner.GradleRunner
 import org.gradle.testkit.runner.TaskOutcome
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.Arguments
@@ -33,7 +32,7 @@ class GradleCompatibilityMatrixTest {
   void bundleTaskIsCompatibleAcrossSupportedGradleVersions(String gradleVersion) throws IOException {
     File testProjectDir = TestFixtures.createTestProject()
     try {
-      BuildResult result = GradleRunner.create()
+      BuildResult result = MatrixRunner.create()
           .withProjectDir(testProjectDir)
           .withGradleVersion(gradleVersion)
           .withArguments('bundle')
@@ -41,6 +40,7 @@ class GradleCompatibilityMatrixTest {
           .forwardOutput()
           .build()
 
+      assertTrue(result.output.contains("TESTKIT_RUNTIME Gradle=${gradleVersion} JVM=${System.getProperty('testJavaVersion', '17')}"), result.output)
       assertEquals(TaskOutcome.SUCCESS, result.task(':bundle').outcome)
       File zipFile = new File(testProjectDir, 'build/zips/test-project-1.0.0-bundle.zip')
       assertTrue(zipFile.exists(), "ZIP file should be created when running on Gradle ${gradleVersion}")

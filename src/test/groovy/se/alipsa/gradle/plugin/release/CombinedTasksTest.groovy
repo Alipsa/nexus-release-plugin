@@ -1,7 +1,7 @@
 package se.alipsa.gradle.plugin.release
 
-import com.sun.net.httpserver.HttpServer
 import org.gradle.testkit.runner.GradleRunner
+import com.sun.net.httpserver.HttpServer
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import static org.junit.jupiter.api.Assertions.*
@@ -81,6 +81,7 @@ releaseAllPrepareMaven {
   settingsHelperFile = layout.projectDirectory.file('settings-helper.groovy')
 }
 """
+            MatrixRunner.instrument(root)
             ReleaseManifest.git(root, 'init'); ReleaseManifest.git(root, 'add', '.')
             ReleaseManifest.git(root, '-c', 'user.name=Test', '-c', 'user.email=test@example.org', 'commit', '-m', 'Fixture')
             run('releaseAllPlan')
@@ -149,7 +150,7 @@ releaseAll {
 
     private def run(String task) { runner(task).build() }
     private GradleRunner runner(String task) {
-        GradleRunner.create().withProjectDir(root).withPluginClasspath()
+        MatrixRunner.create().withProjectDir(root).withPluginClasspath()
             .withEnvironment(new HashMap<String, String>(System.getenv()) + [PATH: new File(root, 'bin').path + File.pathSeparator + System.getenv('PATH')])
             .withArguments(task, '--configuration-cache', '--configuration-cache-problems=fail', '--stacktrace')
     }

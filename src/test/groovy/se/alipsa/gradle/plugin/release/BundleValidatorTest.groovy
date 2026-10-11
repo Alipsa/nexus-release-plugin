@@ -11,6 +11,29 @@ import static org.junit.jupiter.api.Assertions.assertEquals
 class BundleValidatorTest {
 
   @Test
+  void pomMetadataMarkerRequiresModuleAndSignature() {
+    List<String> artifacts = [
+        'demo-1.0.0.jar', 'demo-1.0.0.jar.asc',
+        'demo-1.0.0-sources.jar', 'demo-1.0.0-sources.jar.asc',
+        'demo-1.0.0-javadoc.jar', 'demo-1.0.0-javadoc.jar.asc',
+        'demo-1.0.0.pom.asc'
+    ]
+    String pom = validPom().replace('<modelVersion>', '<!-- do_not_remove: published-with-gradle-metadata -->\n<modelVersion>')
+    [[], ['demo-1.0.0.module'], ['demo-1.0.0.module', 'demo-1.0.0.module.asc']].eachWithIndex { List<String> metadata, int index ->
+      File zip = createBundleZip('com.example', 'demo', '1.0.0', pom, artifacts + metadata)
+      try {
+        List<String> errors = BundleValidator.validateBundle(zip, 'com.example', 'demo', '1.0.0', 'user', 'pass')
+        assertEquals(2 - index, errors.size(), "Unexpected validation errors: ${errors}")
+        if (index == 0) assertTrue(errors.any { it.endsWith('/demo-1.0.0.module') })
+        if (index == 0) assertTrue(errors.any { it.endsWith('/demo-1.0.0.module.asc') })
+        if (index == 1) assertTrue(errors.any { it.startsWith('Missing signature') && it.endsWith('/demo-1.0.0.module') })
+      } finally {
+        zip.parentFile.deleteDir()
+      }
+    }
+  }
+
+  @Test
   void validBundleHasNoErrors() {
     File zipFile = createBundleZip('com.example', 'demo', '1.0.0', validPom(), [
         'demo-1.0.0.jar',
@@ -105,6 +128,62 @@ class BundleValidatorTest {
     assertTrue(errors.size() >= 5)
   }
 
+  @org.junit.jupiter.params.ParameterizedTest
+  @org.junit.jupiter.params.provider.ValueSource(strings = ['bundle', 'maven-plugin', 'ejb', 'custom-jar'])
+  void jarProducingPackagingRemainsSupported(String packaging) {
+    File zip = createBundleZip('com.example', 'demo', '1.0.0',
+        validPom().replace('<modelVersion>', "<packaging>${packaging}</packaging><modelVersion>"),
+        ['demo-1.0.0.jar', 'demo-1.0.0.jar.asc', 'demo-1.0.0-sources.jar',
+         'demo-1.0.0-sources.jar.asc', 'demo-1.0.0-javadoc.jar',
+         'demo-1.0.0-javadoc.jar.asc', 'demo-1.0.0.pom.asc'])
+    try {
+      assertEquals([], BundleValidator.validateBundle(zip, 'com.example', 'demo', '1.0.0', 'user', 'pass'))
+    } finally { zip.parentFile.deleteDir() }
+  }
+
+  @org.junit.jupiter.params.ParameterizedTest
+  @org.junit.jupiter.params.provider.ValueSource(strings = ['war', 'pom'])
+  void unsupportedPackagingReportsSingleCause(String packaging) {
+    File zip = createBundleZip('com.example', 'demo', '1.0.0', validPom().replace('<modelVersion>', "<packaging>${packaging}</packaging><modelVersion>"), [])
+    try {
+      def errors = BundleValidator.validateBundle(zip, 'com.example', 'demo', '1.0.0', 'user', 'pass')
+      assertEquals(1, errors.size())
+      assertTrue(errors[0].contains("Packaging '${packaging}' is not supported"))
+      if (packaging == 'pom') assertTrue(errors[0].contains('releaseAll'))
+    } finally { zip.parentFile.deleteDir() }
+  }
+
+  @org.junit.jupiter.params.ParameterizedTest
+  @org.junit.jupiter.params.provider.ValueSource(strings = ['jar', 'pom', 'module', 'zip'])
+  void everyPrimaryEntryNeedsNonemptySignatureAndChecksums(String extension) {
+    String name = "demo-1.0.0.${extension}"
+    File zip = createBundleZip('com.example', 'demo', '1.0.0', validPom(), extension == 'pom' ? [] : [name])
+    try {
+      def errors = BundleValidator.validateBundle(zip, 'com.example', 'demo', '1.0.0', 'user', 'pass')
+      assertTrue(errors.any { it == "Missing signature for bundle entry: com/example/demo/1.0.0/${name}" })
+      rewriteZip(zip, name + '.asc', new byte[0])
+      errors = BundleValidator.validateBundle(zip, 'com.example', 'demo', '1.0.0', 'user', 'pass')
+      assertTrue(errors.any { it == "Empty signature for bundle entry: com/example/demo/1.0.0/${name}" })
+      rewriteZip(zip, name + '.md5', null)
+      rewriteZip(zip, name + '.sha1', null)
+      errors = BundleValidator.validateBundle(zip, 'com.example', 'demo', '1.0.0', 'user', 'pass')
+      assertEquals(2, errors.count { it == "Missing checksum for bundle entry: com/example/demo/1.0.0/${name}" })
+    } finally { zip.parentFile.deleteDir() }
+  }
+
+  static void rewriteZip(File zip, String filename, byte[] replacement) {
+    Map<String, byte[]> entries = [:]
+    new java.util.zip.ZipFile(zip).withCloseable { archive ->
+      archive.entries().each { entries[it.name] = archive.getInputStream(it).bytes }
+    }
+    String path = 'com/example/demo/1.0.0/' + filename
+    if (replacement == null) entries.remove(path)
+    else entries[path] = replacement
+    new ZipOutputStream(new FileOutputStream(zip)).withCloseable { output ->
+      entries.each { name, bytes -> output.putNextEntry(new ZipEntry(name)); output.write(bytes); output.closeEntry() }
+    }
+  }
+
   private static File createBundleZip(String groupId, String artifactId, String version, String pomText, List<String> fileNames) {
     File dir = File.createTempDir('bundle-validator-test', '')
     File zipFile = new File(dir, 'bundle.zip')
@@ -115,6 +194,14 @@ class BundleValidatorTest {
       zipOut.write(pomText.getBytes('UTF-8'))
       zipOut.closeEntry()
 
+      List<String> primary = ["${artifactId}-${version}.pom".toString()] + fileNames.findAll { !it.endsWith('.asc') }
+      primary.each { String name ->
+        ['md5', 'sha1'].each { String suffix ->
+          zipOut.putNextEntry(new ZipEntry(basePath + name + '.' + suffix))
+          zipOut.write('checksum'.bytes)
+          zipOut.closeEntry()
+        }
+      }
       fileNames.each { String fileName ->
         zipOut.putNextEntry(new ZipEntry(basePath + fileName))
         zipOut.write('x'.bytes)

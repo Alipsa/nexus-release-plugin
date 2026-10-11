@@ -5,7 +5,10 @@ import org.gradle.api.DefaultTask
 import org.gradle.api.GradleException
 import org.gradle.api.file.DirectoryProperty
 import org.gradle.api.file.RegularFileProperty
-import org.gradle.api.provider.ListProperty
+import org.gradle.api.provider.MapProperty
+import org.gradle.api.file.ConfigurableFileCollection
+import org.gradle.api.tasks.Internal
+import org.gradle.api.tasks.Optional
 import org.gradle.api.provider.Property
 import org.gradle.api.tasks.Input
 import org.gradle.api.tasks.InputDirectory
@@ -46,9 +49,23 @@ abstract class BundleTask extends DefaultTask {
     @PathSensitive(PathSensitivity.RELATIVE)
     abstract DirectoryProperty getPublicationDirectory()
 
+    @Internal
+    abstract MapProperty<String, File> getArtifactEntries()
+
+    @Input
+    List<String> getArtifactEntryNames() { artifactEntries.get().keySet().toList().sort() }
+
     @InputFiles
-    @PathSensitive(PathSensitivity.RELATIVE)
-    abstract ListProperty<File> getArtifactFiles()
+    @PathSensitive(PathSensitivity.NONE)
+    abstract ConfigurableFileCollection getArtifactInputFiles()
+
+    @Internal
+    abstract RegularFileProperty getModuleMetadataFile()
+
+    @InputFiles
+    @Optional
+    @PathSensitive(PathSensitivity.NONE)
+    abstract ConfigurableFileCollection getModuleMetadataInput()
 
     @OutputFile
     abstract RegularFileProperty getBundleFile()
@@ -67,12 +84,26 @@ abstract class BundleTask extends DefaultTask {
         String artifactIdValue = artifactId.get()
         String versionValue = version.get()
         String publicationNameValue = publicationName.get()
-        List<File> artifacts = artifactFiles.get()
+        Map<String, File> artifacts = artifactEntries.get()
 
         File publicationDir = publicationDirectory.get().asFile
         File pomFile = new File(publicationDir, "pom-default.xml")
         if (!pomFile.exists()) {
             throw new GradleException("Expected POM file at ${pomFile.absolutePath} but it was not found. Has 'publishToMavenLocal' completed successfully?")
+        }
+
+        File metadata = moduleMetadataFile.orNull?.asFile
+        boolean marker = pomFile.getText('UTF-8').contains('published-with-gradle-metadata')
+        if (metadata?.exists() && !marker) {
+            throw new GradleException('Module metadata state is inconsistent with the POM')
+        }
+        if (marker && !metadata?.exists()) {
+            throw new GradleException('The POM advertises Gradle metadata, but no metadata was produced in this build. Disable the metadata task (enabled = false) instead of skipping it, or let it run.')
+        }
+        if (metadata?.exists()) {
+            artifacts = new LinkedHashMap<String, File>(artifacts)
+            String metadataName = "${artifactIdValue}-${versionValue}.module"
+            if (artifacts.put(metadataName, metadata) != null) throw new GradleException("Duplicate bundle entry: ${metadataName}")
         }
 
         // Create the bundle zip
@@ -84,7 +115,7 @@ abstract class BundleTask extends DefaultTask {
     }
 
     private void createBundleZip(File zipFile, String groupIdValue, String artifactIdValue,
-                                  String versionValue, List<File> artifacts, File publicationDir) {
+                                  String versionValue, Map<String, File> artifacts, File publicationDir) {
         String mavenPathPrefix = "${groupIdValue.replace('.', '/')}/${artifactIdValue}/${versionValue}/"
 
         if (!publicationDir.exists()) {
@@ -96,14 +127,12 @@ abstract class BundleTask extends DefaultTask {
         try (ZipOutputStream zipOut = new ZipOutputStream(new FileOutputStream(zipFile))) {
 
             // 1. Add all publication artifacts (e.g. JARs and their signatures)
-            artifacts.each { File file ->
+            artifacts.each { String name, File file ->
                 if (!file.exists()) {
                     logger.warn("Artifact file does not exist: $file")
                     return
                 }
 
-                String name = file.name
-                if (!name.endsWith('.jar')) return
 
                 String zipEntryName = mavenPathPrefix + name
                 logger.debug("Adding file: $zipEntryName")
@@ -111,9 +140,9 @@ abstract class BundleTask extends DefaultTask {
                 zipOut << file.bytes
                 zipOut.closeEntry()
 
-                missingFilesDetected = missingFilesDetected || addFileToZip(file, ".asc", mavenPathPrefix, zipOut)
+                missingFilesDetected = addFileToZip(new File(file.absolutePath + ".asc"), zipEntryName + ".asc", zipOut) || missingFilesDetected
                 CHECKSUM_ALGOS.each { String algo ->
-                    addChecksumToZip(file, algo, "${mavenPathPrefix}${file.name}.${checksumExtension(algo)}", zipOut)
+                    addChecksumToZip(file, algo, "${zipEntryName}.${checksumExtension(algo)}", zipOut)
                 }
             }
 
@@ -126,7 +155,7 @@ abstract class BundleTask extends DefaultTask {
                 zipOut.putNextEntry(new ZipEntry(pomEntryName))
                 zipOut << pomFile.bytes
                 zipOut.closeEntry()
-                missingFilesDetected = missingFilesDetected || addFileToZip(new File(publicationDir, "pom-default.xml.asc"), pomEntryName + ".asc", zipOut)
+                missingFilesDetected = addFileToZip(new File(publicationDir, "pom-default.xml.asc"), pomEntryName + ".asc", zipOut) || missingFilesDetected
                 CHECKSUM_ALGOS.each { String algo ->
                     addChecksumToZip(pomFile, algo, "${pomEntryName}.${checksumExtension(algo)}", zipOut)
                 }
@@ -151,12 +180,6 @@ abstract class BundleTask extends DefaultTask {
             logger.warn("Cannot add file: $sourceFile to zip, it does not exist")
             return true
         }
-    }
-
-    private boolean addFileToZip(File baseFile, String suffix, String mavenPathPrefix, ZipOutputStream zipOut) {
-        File sourceFile = new File(baseFile.absolutePath + suffix)
-        String targetPath = mavenPathPrefix + baseFile.name + suffix
-        addFileToZip(sourceFile, targetPath, zipOut)
     }
 
     private void addChecksumToZip(File sourceFile, String algo, String targetPath, ZipOutputStream zipOut) throws IOException {

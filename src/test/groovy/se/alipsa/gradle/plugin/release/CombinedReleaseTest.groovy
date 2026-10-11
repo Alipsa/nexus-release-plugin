@@ -159,6 +159,23 @@ class CombinedReleaseTest {
         assertThrows(IllegalArgumentException) { CombinedBundle.create(directory, zip, [all]) }
     }
 
+    @Test void listedModuleMetadataIsSignedAndUnsupportedFilesStillFail() {
+        def component = publication('matrix-all', 'jar', ['matrix-all-1.pom', 'matrix-all-1.jar', 'matrix-all-1.module'])
+        component.files.each { String name ->
+            File file = new File(directory, "g/matrix-all/1/${name}")
+            file.parentFile.mkdirs()
+            file.text = name.endsWith('.pom') ? pomText('matrix-all', 'jar') : 'artifact fixture'
+            new File(file.path + '.asc').text = 'signature'
+        }
+        File zip = new File(directory, 'metadata.zip')
+        CombinedBundle.create(directory, zip, [component])
+        new ZipFile(zip).withCloseable { assertNotNull(it.getEntry('g/matrix-all/1/matrix-all-1.module.asc')) }
+        new File(directory, 'g/matrix-all/1/matrix-all-1.module.asc').delete()
+        assertThrows(IllegalArgumentException) { CombinedBundle.create(directory, zip, [component]) }
+        component.files = ['matrix-all-1.pom', 'matrix-all-1.jar', 'matrix-all-1.exe']
+        assertThrows(IllegalArgumentException) { CombinedBundle.create(directory, zip, [component]) }
+    }
+
     @Test void staticMavenPropertiesAndUnresolvedExpressions() {
         File pom = new File(directory, 'pom.xml')
         pom.text = pomText('a', 'pom').replace('</project>', '<dependencies><dependency><groupId>g</groupId><artifactId>b</artifactId><version>${bVersion}</version></dependency></dependencies></project>')

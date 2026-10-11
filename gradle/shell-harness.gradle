@@ -1,0 +1,30 @@
+// Shared policy; also applied by isolated TestKit fixtures.
+def bashExecutable = providers.gradleProperty('shellHarnessBash').getOrElse('bash')
+def required = providers.gradleProperty('requireShellHarness').getOrElse('false').toBoolean()
+abstract class BashAvailable implements ValueSource<Boolean, BashAvailable.Parameters> {
+    interface Parameters extends ValueSourceParameters {
+        Property<String> getExecutable()
+    }
+    Boolean obtain() {
+        try {
+            def process = new ProcessBuilder(parameters.executable.get(), '-c', 'exit 0').start()
+            boolean available = process.waitFor(5, java.util.concurrent.TimeUnit.SECONDS) && process.exitValue() == 0
+            if (process.isAlive()) process.destroyForcibly()
+            return available
+        } catch (IOException ignored) { return false }
+    }
+}
+def bashAvailable = providers.of(BashAvailable) { parameters.executable.set(bashExecutable) }
+tasks.named('shellHarness') {
+    if (it instanceof Exec) executable bashExecutable
+    def policyLogger = logger
+    onlyIf('Bash is available, or required by CI') {
+        boolean available = bashAvailable.get()
+        if (!available && required) {
+            String message = "Bash is unavailable but requireShellHarness=true: ${bashExecutable}"
+            policyLogger.error(message)
+            throw new GradleException(message)
+        }
+        available
+    }
+}

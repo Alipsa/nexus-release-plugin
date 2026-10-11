@@ -1,5 +1,6 @@
 package se.alipsa.gradle.plugin.release
 
+import java.nio.charset.StandardCharsets
 import groovy.json.JsonSlurper
 import groovy.transform.CompileStatic
 import org.gradle.api.GradleException
@@ -7,7 +8,7 @@ import org.gradle.api.logging.Logger
 
 /**
  * HTTP client for interacting with the Central Portal API.
- * This class is configuration cache compatible - it only stores serializable values.
+ * Instances are created during task execution, outside configuration-cache state.
  */
 @CompileStatic
 class CentralPortalClient extends WsClient {
@@ -19,6 +20,20 @@ class CentralPortalClient extends WsClient {
     String password
 
     CentralPortalClient(Logger logger, String nexusUrl, String userName, String password) {
+        this(logger, nexusUrl, userName, password, 30, 1800)
+    }
+
+    CentralPortalClient(Logger logger, String nexusUrl, String userName, String password, int connectSeconds, int requestSeconds) {
+        super(connectSeconds, requestSeconds)
+        this.log = logger
+        this.publishUrl = nexusUrl ?: CENTRAL_PORTAL_URL
+        this.userName = userName
+        this.password = password
+    }
+
+    protected CentralPortalClient(Logger logger, String nexusUrl, String userName, String password,
+                                  java.time.Duration connectTimeout, long requestMillis, long smallCallMillis) {
+        super(connectTimeout, requestMillis, smallCallMillis)
         this.log = logger
         this.publishUrl = nexusUrl ?: CENTRAL_PORTAL_URL
         this.userName = userName
@@ -31,7 +46,7 @@ class CentralPortalClient extends WsClient {
     }
 
     String auth(String username, String password) {
-        return "Bearer " + Base64.getEncoder().encodeToString((username + ":" + password).getBytes())
+        return "Bearer " + Base64.getEncoder().encodeToString((username + ":" + password).getBytes(StandardCharsets.UTF_8))
     }
 
     /**
@@ -52,6 +67,11 @@ class CentralPortalClient extends WsClient {
             Map<String, Object> result = postMultipart(urlString, file, userName, password)
             log.debug("Upload result: $result")
             return (result.get(BODY) as String)?.trim()
+        } catch (SocketTimeoutException e) {
+            if (e.cause instanceof java.net.http.HttpConnectTimeoutException) {
+                throw new GradleException("Could not connect to Central Portal at ${publishUrl} during upload. Check the URL, network connectivity, and proxy settings. ${e.message}", e)
+            }
+            throw new GradleException("Upload timed out; the deployment outcome is unknown. The bundle may already have reached Central Portal. Check https://central.sonatype.com/publishing/deployments before retrying to avoid a duplicate deployment. ${e.message}", e)
         } catch (WsException e) {
             throw createUploadException(e)
         }
@@ -93,7 +113,7 @@ class CentralPortalClient extends WsClient {
         return status?.get('deploymentState') as String
     }
 
-    private GradleException createUploadException(WsException e) {
+    GradleException createUploadException(WsException e) {
         String body = e.body?.trim()
         switch (e.statusCode) {
             case 401:
