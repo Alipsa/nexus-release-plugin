@@ -4,7 +4,7 @@ plugins {
   id 'maven-publish'
   id "com.gradle.plugin-publish" version "2.2.1"
   id "io.github.ben-manes.versions" version "0.65.0"
-  id 'se.alipsa.nexus-release-plugin' version '2.2.0'
+  id 'se.alipsa.nexus-release-plugin' version '2.3.0'
 }
 
 group = project.property('group')
