@@ -149,6 +149,35 @@ class CentralUploadApiTest {
   }
 
   @Test
+  void uploadConnectTimeoutReportsConnectionFailure() {
+    def connectTimeout = new java.net.http.HttpConnectTimeoutException('connection stalled')
+    SocketTimeoutException timeout = WsClient.timeoutFailure(connectTimeout, 1800000,
+        'https://central.sonatype.com/api/v1/publisher/upload')
+    // Inject a transport failure deterministically; unreachable hosts depend on routing/firewalls.
+    def client = new CentralPortalClient(org.gradle.api.logging.Logging.getLogger(CentralUploadApiTest),
+        null, 'u', 'p') {
+      @Override
+      Map<String, Object> postMultipart(String url, File file, String fieldName,
+                                        String username, String password) {
+        throw timeout
+      }
+    }
+    File dir = File.createTempDir('connect-timeout-upload', '')
+    try {
+      File bundle = new File(dir, 'bundle.zip')
+      bundle.text = 'bundle'
+      GradleException failure = assertThrows(GradleException) { client.upload(bundle) }
+      assertTrue(failure.message.contains('Could not connect to Central Portal during upload'))
+      assertTrue(failure.message.contains('Check nexusUrl, network connectivity, and proxy settings'))
+      assertFalse(failure.message.contains('outcome is unknown'))
+      assertFalse(failure.message.contains('may already have reached'))
+      assertFalse(failure.message.contains('publishing/deployments'))
+      org.junit.jupiter.api.Assertions.assertSame(timeout, failure.cause)
+      org.junit.jupiter.api.Assertions.assertSame(connectTimeout, failure.cause.cause)
+    } finally { dir.deleteDir() }
+  }
+
+  @Test
   void upload401ReturnsFriendlyMessage() {
     withUploadStatus(401, '{"error":"bad credentials"}') { String targetUrl ->
       CentralPortalClient client = new CentralPortalClient(ProjectBuilder.builder().build().logger, targetUrl, 'u', 'p')

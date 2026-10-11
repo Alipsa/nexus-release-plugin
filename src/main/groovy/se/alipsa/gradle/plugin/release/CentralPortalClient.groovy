@@ -68,6 +68,9 @@ class CentralPortalClient extends WsClient {
             log.debug("Upload result: $result")
             return (result.get(BODY) as String)?.trim()
         } catch (SocketTimeoutException e) {
+            if (e.cause instanceof java.net.http.HttpConnectTimeoutException) {
+                throw new GradleException("Could not connect to Central Portal during upload. Check nexusUrl, network connectivity, and proxy settings. ${e.message}", e)
+            }
             throw new GradleException("Upload timed out; the deployment outcome is unknown. The bundle may already have reached Central Portal. Check https://central.sonatype.com/publishing/deployments before retrying to avoid a duplicate deployment. ${e.message}", e)
         } catch (WsException e) {
             throw createUploadException(e)
