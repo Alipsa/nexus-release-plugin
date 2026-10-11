@@ -27,7 +27,7 @@ plugins {
   // your other plugins...
    id 'signing'
    id 'maven-publish'
-   id 'se.alipsa.nexus-release-plugin' version '2.3.0'
+   id 'se.alipsa.nexus-release-plugin' version '2.4.0'
 }
 
 publishing {
@@ -70,7 +70,7 @@ nexusReleasePlugin {
 }
 ```
 
-The plugin adds these tasks:
+By default, the plugin adds these tasks:
 
 - `bundle`: creates the Maven Central bundle from the configured publication.
 - `release`: validates and uploads the bundle to Central Portal.
@@ -113,7 +113,7 @@ Example build.gradle:
 plugins {
   id 'groovy'
   id 'maven-publish'
-  id 'se.alipsa.nexus-release-plugin' version '2.3.0'
+  id 'se.alipsa.nexus-release-plugin' version '2.4.0'
 }
 
 group = 'se.alipsa'
@@ -221,6 +221,25 @@ Single-module behavior remains the default. See [configuration, shared-property 
 and migration instructions](combined-releases.md). The separate combined plugin ID and
 its implementation class are retired in 2.4.0.
 
+Enable combined tasks in the root build:
+
+```groovy
+plugins {
+    id 'se.alipsa.nexus-release-plugin' version '2.4.0'
+}
+
+nexusReleasePlugin {
+    combinedRelease {
+        // Configure shared paths, credentials and task-specific inputs as described in the guide.
+    }
+}
+```
+
+This registers `releaseAllPlan`, `releaseAllSigningCheck`, `releaseAllGuard`,
+`releaseAllPrepareMaven`, `bundleAll` and `releaseAll`. Configure named tasks after
+the block, or use typed `configureEach` before it. Combined-only roots also need
+the opt-out property above; the block alone retains the default single-publication tasks.
+
 Combined credentials and Portal URL inherit parent conventions; parent HTTP timeout settings
 do not. Combined CentralPortalClient defaults remain 30 s connect, 1800 s upload and 60 s
 small calls. PublicationStatus probes use 15 s connect and 30 s per-request timeouts;
@@ -241,7 +260,7 @@ The build uses the Gradle 9.8.1 wrapper and compiles for Java 17.
 
 MIT License - see [LICENSE](LICENSE) for details.
 
-### Release deadlines and bundle contents in 2.3.0
+### Release deadlines and bundle contents
 
 `httpConnectTimeoutSeconds` defaults to 30 and `httpRequestTimeoutSeconds` to 1800. Both accept 1–86400 seconds. Set them in `nexusReleasePlugin`; overrides apply to `release`. Uploads use the full request deadline. Deployment status checks and other small calls through `CentralPortalClient` use the shorter of 60 seconds and the configured deadline. The caller stops waiting even if an upload or response body stalls. Cancellation closed stalled connections in the verified runtime matrix; no stronger guarantee is made for arbitrary network implementations.
 

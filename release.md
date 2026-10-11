@@ -1,10 +1,11 @@
 # Release history
 
-## Ver 2.4.0, in progress
+## Ver 2.4.0, 2026-10-11
 - Consolidate combined releases into `se.alipsa.nexus-release-plugin`, enabled by
   `nexusReleasePlugin { combinedRelease { } }`, with shared path, credential and endpoint conventions.
 - Add the root-only `nexusReleasePlugin.rootSinglePublicationTasks=false` Gradle property to preserve
   subproject task selectors and custom root tasks in combined-only builds.
+- Fix: tolerate surrounding whitespace in the root opt-out property and include invalid values in its error message.
 - Breaking migration: remove the separate combined plugin ID/marker and `ReleaseAllSupportPlugin` class.
   Configure combined tasks after opt-in or through typed `configureEach`; Kotlin users need typed named
   lookup instead of generated combined task accessors. See [the migration guide](combined-releases.md#migration-from-the-combined-plugin).
