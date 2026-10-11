@@ -124,7 +124,7 @@ abstract class ReleaseTask extends DefaultTask {
                 state = releaseClient.getDeploymentState(status)
             } catch (IOException e) {
                 if (e instanceof WsException && ((WsException) e).statusCode in [401, 403]) {
-                    throw releaseClient.createUploadException((WsException) e)
+                    throw new GradleException("Status check for deployment ${deploymentId} was rejected (HTTP ${((WsException) e).statusCode}); the upload succeeded. Check https://central.sonatype.com/publishing/deployments for details.", e)
                 }
                 state = null
                 lastError = e

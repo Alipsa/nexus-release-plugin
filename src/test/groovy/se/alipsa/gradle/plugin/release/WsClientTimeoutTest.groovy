@@ -151,6 +151,74 @@ class WsClientTimeoutTest {
         } finally { server.stop(0) }
     }
 
+    @ParameterizedTest
+    @ValueSource(ints = [301, 302, 307, 308])
+    void postRedirectsRejectMethodChangesAndPreserveBodies(int code) {
+        def server = com.sun.net.httpserver.HttpServer.create(new InetSocketAddress('127.0.0.1', 0), 0)
+        def methods = new java.util.concurrent.CopyOnWriteArrayList<String>()
+        def bodies = new java.util.concurrent.CopyOnWriteArrayList<String>()
+        server.createContext('/redirect') { exchange ->
+            exchange.requestBody.readAllBytes()
+            exchange.responseHeaders.set('Location', '/target')
+            exchange.sendResponseHeaders(code, -1)
+            exchange.close()
+        }
+        server.createContext('/target') { exchange ->
+            methods.add(exchange.requestMethod)
+            bodies.add(new String(exchange.requestBody.readAllBytes(), 'UTF-8'))
+            exchange.sendResponseHeaders(200, 7)
+            exchange.responseBody.withCloseable { it.write('fake-id'.bytes) }
+        }
+        server.start()
+        File bundle = File.createTempFile('redirect-upload', '.zip')
+        bundle.text = 'bundle-content'
+        try {
+            String url = "http://127.0.0.1:${server.address.port}/redirect"
+            def client = new Client()
+            [ { client.post(url, 'status-payload'.bytes, '', '') },
+              { client.postMultipart(url, bundle, '', '') } ].each { call ->
+                if (code in [301, 302]) {
+                    WsException failure = assertThrows(WsException) { call() }
+                    assertEquals(code, failure.statusCode)
+                    assertTrue(failure.body.contains('converted to GET'), failure.message)
+                    assertTrue(failure.body.contains('/target'), failure.message)
+                    assertEquals('GET', methods.last())
+                    assertEquals('', bodies.last())
+                } else {
+                    assertEquals('fake-id', call().body)
+                    assertEquals('POST', methods.last())
+                    assertTrue(bodies.last().contains('status-payload') || bodies.last().contains('bundle-content'))
+                }
+            }
+        } finally { bundle.delete(); server.stop(0) }
+    }
+
+    @Test
+    void crossOriginPostRedirectReportsRedirectInsteadOfAuthenticationFailure() {
+        def source = com.sun.net.httpserver.HttpServer.create(new InetSocketAddress('127.0.0.1', 0), 0)
+        def target = com.sun.net.httpserver.HttpServer.create(new InetSocketAddress('127.0.0.1', 0), 0)
+        target.createContext('/') { exchange ->
+            exchange.sendResponseHeaders(401, -1)
+            exchange.close()
+        }
+        source.createContext('/') { exchange ->
+            exchange.requestBody.readAllBytes()
+            exchange.responseHeaders.set('Location', "http://127.0.0.1:${target.address.port}/")
+            exchange.sendResponseHeaders(302, -1)
+            exchange.close()
+        }
+        source.start(); target.start()
+        File bundle = File.createTempFile('redirect-upload', '.zip')
+        try {
+            def client = new CentralPortalClient(org.gradle.api.logging.Logging.getLogger(getClass()),
+                "http://127.0.0.1:${source.address.port}", 'user', 'password')
+            def failure = assertThrows(org.gradle.api.GradleException) { client.upload(bundle) }
+            assertTrue(failure.message.contains('converted to GET'), failure.message)
+            assertFalse(failure.message.contains('Authentication failed'), failure.message)
+            assertEquals(302, ((WsException) failure.cause).statusCode)
+        } finally { bundle.delete(); source.stop(0); target.stop(0) }
+    }
+
     static void readHeaders(InputStream input) {
         int state = 0
         byte[] end = '\r\n\r\n'.bytes

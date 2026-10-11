@@ -67,6 +67,8 @@ class CentralPortalClient extends WsClient {
             Map<String, Object> result = postMultipart(urlString, file, userName, password)
             log.debug("Upload result: $result")
             return (result.get(BODY) as String)?.trim()
+        } catch (SocketTimeoutException e) {
+            throw new GradleException("Upload timed out; the deployment outcome is unknown. The bundle may already have reached Central Portal. Check https://central.sonatype.com/publishing/deployments before retrying to avoid a duplicate deployment. ${e.message}", e)
         } catch (WsException e) {
             throw createUploadException(e)
         }

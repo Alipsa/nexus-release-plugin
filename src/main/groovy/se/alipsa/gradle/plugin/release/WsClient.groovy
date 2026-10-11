@@ -89,6 +89,16 @@ abstract class WsClient {
             Thread.currentThread().interrupt()
             throw new IOException('HTTP request interrupted', e)
         }
+        if (response.request().method() != method) {
+            // Report the redirect rather than a target's error (for example a GET's 401).
+            HttpResponse<String> redirect = response
+            while (redirect.previousResponse().isPresent()) {
+                redirect = redirect.previousResponse().get()
+                if (redirect.request().method() == method) break
+            }
+            throw new WsException(redirect.statusCode(),
+                "${method} ${url} was redirected to ${response.uri()} and converted to ${response.request().method()}")
+        }
         if (response.statusCode() < 200 || response.statusCode() >= 300) {
             throw new WsException(response.statusCode(), response.body())
         }

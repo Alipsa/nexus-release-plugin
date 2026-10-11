@@ -278,8 +278,8 @@ nexusReleasePlugin {
       [2, [502, 'PUBLISHED'], 'success', 2],
       [2, [429, 'PUBLISHED'], 'success', 2],
       [2, ['malformed', 'PUBLISHED'], 'success', 2],
-      [2, [401], 'Authentication failed', 1],
-      [2, [403], 'Forbidden - is the namespace verified', 1]
+      [2, [401], 'Status check for deployment poll-id was rejected (HTTP 401); the upload succeeded.', 1],
+      [2, [403], 'Status check for deployment poll-id was rejected (HTTP 403); the upload succeeded.', 1]
     ]
     rows.stream().map { org.junit.jupiter.params.provider.Arguments.of(it as Object[]) }
   }
@@ -378,7 +378,10 @@ nexusReleasePlugin {
       })
       File bundle = new File(dir, 'bundle.zip'); bundle.text = 'upload'
       def manifest = [selected: []]
-      assertThrows(IOException) { CombinedDeployment.submit(record, bundle, manifest, new PublicationStatus(), client) }
+      GradleException timeout = assertThrows(GradleException) { CombinedDeployment.submit(record, bundle, manifest, new PublicationStatus(), client) }
+      assertTrue(timeout.cause instanceof SocketTimeoutException)
+      assertTrue(timeout.message.contains('outcome is unknown'))
+      assertTrue(timeout.message.contains('https://central.sonatype.com/publishing/deployments before retrying'))
       assertEquals('UPLOAD_ERROR', ReleaseManifest.read(record).state)
       ReleaseManifest.write(record, [deploymentId: 'combined-id', state: 'UPLOADED', manifest: manifest])
       def pollingClient = new CentralPortalClient(org.gradle.api.logging.Logging.getLogger(CentralUploadApiTest), server.url('/api/v1').toString(), 'u', 'p', java.time.Duration.ofSeconds(1), 1800000L, 1000L)
