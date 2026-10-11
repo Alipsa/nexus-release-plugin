@@ -2,8 +2,8 @@ plugins {
   id 'groovy'
   id 'signing'
   id 'maven-publish'
-  id "com.gradle.plugin-publish" version "2.1.1"
-  id "com.github.ben-manes.versions" version "0.54.0"
+  id "com.gradle.plugin-publish" version "2.2.1"
+  id "io.github.ben-manes.versions" version "0.65.0"
   id 'se.alipsa.nexus-release-plugin' version '2.2.0'
 }
 
@@ -45,14 +45,14 @@ repositories {
 }
 
 dependencies {
-  def groovyVersion = "4.0.31"
+  def groovyVersion = "4.0.33"
   compileOnly "org.apache.groovy:groovy:${groovyVersion}"
 
   testImplementation gradleTestKit()
-  testImplementation 'org.junit.jupiter:junit-jupiter:6.0.3'
-  testImplementation 'org.junit.platform:junit-platform-launcher:6.0.3'
+  testImplementation 'org.junit.jupiter:junit-jupiter:6.1.3'
+  testImplementation 'org.junit.platform:junit-platform-launcher:6.1.3'
   testImplementation "org.apache.groovy:groovy:${groovyVersion}"
-  testImplementation 'com.squareup.okhttp3:mockwebserver:5.3.2'
+  testImplementation 'com.squareup.okhttp3:mockwebserver:5.5.0'
   testImplementation 'org.testcontainers:testcontainers:2.0.5'
   testImplementation 'org.testcontainers:testcontainers-junit-jupiter:2.0.5'
 }
@@ -160,7 +160,7 @@ test {
 }
 
 signing {
-  if (project.properties['signing.keyId'] != null) {
+  if (project.findProperty('signing.keyId') != null) {
     project.logger.lifecycle("Signing artifacts...")
     sign publishing.publications.mavenCentral
   } else {

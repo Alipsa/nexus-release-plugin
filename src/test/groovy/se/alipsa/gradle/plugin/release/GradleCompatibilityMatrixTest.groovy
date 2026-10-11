@@ -23,7 +23,7 @@ class GradleCompatibilityMatrixTest {
     // Default versions to test when running locally or without specific version
     return Stream.of(
         Arguments.of('8.13'),
-        Arguments.of('9.4.0')
+        Arguments.of('9.8.1')
     )
   }
 
