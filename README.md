@@ -212,7 +212,21 @@ An explicit `githubRepo` always takes priority over auto-detection.
 
 ## Combined releases
 
-The opt-in `se.alipsa.nexus-release-all` support plugin adds manifest planning, guarded preparation, combined bundling and one-upload deployment recovery. See [the task contract and workflow](combined-releases.md). Existing single-module releases remain available.
+Starting with 2.4.0, the original plugin provides manifest planning, guarded preparation,
+combined bundling and one-upload deployment recovery through
+`nexusReleasePlugin { combinedRelease { } }`. Combined-only roots should set
+`nexusReleasePlugin.rootSinglePublicationTasks=false` in `gradle.properties` before applying
+the plugin, preserving subproject `bundle`/`release` selectors and custom root task names.
+Single-module behavior remains the default. See [configuration, shared-property precedence
+and migration instructions](combined-releases.md). The separate combined plugin ID and
+its implementation class are retired in 2.4.0.
+
+Combined credentials and Portal URL inherit parent conventions; parent HTTP timeout settings
+do not. Combined CentralPortalClient defaults remain 30 s connect, 1800 s upload and 60 s
+small calls. PublicationStatus probes use 15 s connect and 30 s per-request timeouts;
+repository HEAD probes use 15 s connect/read timeouts. Combined `repositoryUrl` does not
+inherit `metadataBaseUrl`: metadata lookup and exact-publication probes can require different
+proxy endpoints. Configure both explicitly when needed.
 
 ## Building the Plugin
 

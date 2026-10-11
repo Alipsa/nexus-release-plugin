@@ -15,13 +15,6 @@ gradlePlugin {
   website.set("https://github.com/Alipsa/nexus-release-plugin")
   vcsUrl.set("https://github.com/Alipsa/nexus-release-plugin")
   plugins {
-    combinedRelease {
-      id = 'se.alipsa.nexus-release-all'
-      implementationClass = 'se.alipsa.gradle.plugin.release.ReleaseAllSupportPlugin'
-      displayName = 'Combined Central Release Support'
-      description = 'Plans, bundles and submits multiple publications in one Central deployment'
-      tags.set(['publish', 'release', 'central'])
-    }
     simplePlugin {
       id = 'se.alipsa.nexus-release-plugin'
       implementationClass = 'se.alipsa.gradle.plugin.release.NexusReleasePlugin'

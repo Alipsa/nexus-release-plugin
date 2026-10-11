@@ -387,7 +387,8 @@ class CombinedReleaseTest {
 
     @Test void combinedTaskDefaultsArePresent() {
         def project = org.gradle.testfixtures.ProjectBuilder.builder().withProjectDir(directory).build()
-        project.pluginManager.apply(ReleaseAllSupportPlugin)
+        project.pluginManager.apply(NexusReleasePlugin)
+        project.extensions.getByType(NexusReleasePluginExtension).combinedRelease { }
         def release = project.tasks.getByName('releaseAll')
         assertEquals('', release.resumeId.get())
         assertEquals('https://repo.maven.apache.org/maven2', release.repositoryUrl.get())

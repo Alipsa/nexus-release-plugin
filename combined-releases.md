@@ -1,8 +1,25 @@
 # Combined release support
 
-The opt-in `se.alipsa.nexus-release-all` support plugin registers root tasks without
-registering single-publication tasks or changing `se.alipsa.nexus-release-plugin`.
-The existing `bundle` and `release` tasks remain available.
+Combined releases are an opt-in feature of `se.alipsa.nexus-release-plugin` starting
+with 2.4.0. Calling `nexusReleasePlugin { combinedRelease { } }` registers the six
+combined tasks. Single-publication `bundle` and `release` keep their existing defaults.
+
+For a combined-only root, add this to the consumer's `gradle.properties` before
+applying the plugin:
+
+```properties
+nexusReleasePlugin.rootSinglePublicationTasks=false
+```
+
+This root-only switch suppresses the plugin's root `bundle`, `release` and
+`clearModuleMetadata`, preserving unqualified subproject task selectors and any
+custom root tasks with those names. Subprojects ignore the switch. Discovery tasks
+remain available, and the plugin still applies `signing` and `maven-publish`.
+Parent `bundleTask` and `releaseTask` references are null when suppressed. Setting a
+root `mavenPublication` does not re-enable those tasks; ordinary publishing and
+discovery can still use it. With the switch false and no combined block, neither
+release workflow is registered. Leave it true (the default) to use both workflows
+in the same project.
 
 Matrix provides the complete orchestration, prerequisites and command examples in
 [its combined-release guide](https://github.com/Alipsa/matrix/blob/main/docs/releaseAll.md).
@@ -11,7 +28,8 @@ this plugin is a separate operation.
 
 ## Task contract
 
-All file locations and credentials are configured explicitly through typed task properties.
+All file locations are configured explicitly through shared extension or typed task properties.
+Credentials can inherit from the parent extension; no paths have defaults.
 The source repository must be clean and committed. Generated files belong in ignored outputs.
 
 | Task | Inputs and behavior |
@@ -27,22 +45,99 @@ The Matrix build configures these properties in `gradle/release-all.gradle`. For
 a caller configures the bundle task after registering its own staging/preparation workflow:
 
 ```groovy
-plugins { id 'se.alipsa.nexus-release-all' }
+plugins { id 'se.alipsa.nexus-release-plugin' }
 
-bundleAll {
-    sourceDirectory = layout.projectDirectory
-    manifestFile = layout.buildDirectory.file('releaseAll/manifest.json')
-    stagingDirectory = layout.buildDirectory.dir('releaseAll/staging')
-    bundleFile = layout.buildDirectory.file('releaseAll/bundle.zip')
-    receiptFile = layout.buildDirectory.file('releaseAll/bundle-receipt.json')
+nexusReleasePlugin {
+    userName = providers.gradleProperty('sonatypeUsername')
+    password = providers.gradleProperty('sonatypePassword')
+    combinedRelease {
+        sourceDirectory = layout.projectDirectory
+        manifestFile = layout.buildDirectory.file('releaseAll/manifest.json')
+        stagingDirectory = layout.buildDirectory.dir('releaseAll/staging')
+        bundleFile = layout.buildDirectory.file('releaseAll/bundle.zip')
+        receiptFile = layout.buildDirectory.file('releaseAll/bundle-receipt.json')
+        recordFile = layout.buildDirectory.file('releaseAll/deployment.json')
+        bundleAllTask.configure { /* task-specific configuration */ }
+    }
+}
+
+tasks.named('releaseAllPlan') {
+    // Configure revision, candidate POMs/descriptors and Portal fixture.
 }
 ```
 
 Run discovery in a separate invocation before configuring staging dependencies from the
-saved manifest. Run source guards before staging, the caller's scoped verification before
+saved manifest. Shared path conventions do not add task dependencies. Scheduling
+`releaseAllPlan` alongside a guard, preparation or signing-check task that reads its
+manifest without explicit ordering/dependencies can produce Gradle's implicit/missing
+task-dependency error. Keep discovery separate; resume must not acquire a planner dependency.
+Run source guards before staging, the caller's scoped verification before
 preparation, then `bundleAll`, then `releaseAll`. Do not upload if any preceding phase fails.
 The combined tasks support strict configuration-cache reuse; legacy verification tasks can
 run with `--no-configuration-cache` independently.
+
+## Shared conventions
+
+Direct task settings override combined extension conventions; combined settings override
+parent conventions. Credentials inherit from parent `userName`/`password`, and `portalUrl`
+inherits parent `nexusUrl`. Unconfigured credentials remain unset. `repositoryUrl` defaults
+to `https://repo.maven.apache.org/maven2`; it does not inherit `metadataBaseUrl`, because
+metadata lookup and exact-publication availability probes are separate endpoints and a
+proxy for one may not support the other. Configure both explicitly when using a shared proxy.
+All shared paths remain unset until configured.
+
+| Shared property | Tasks receiving its convention |
+| --- | --- |
+| `sourceDirectory` | `releaseAllPlan`, `releaseAllGuard`, `releaseAllPrepareMaven`, `bundleAll`, `releaseAll` |
+| `manifestFile` | All six combined tasks |
+| `stagingDirectory` | `releaseAllPrepareMaven`, `bundleAll` |
+| `bundleFile`, `receiptFile` | `bundleAll`, `releaseAll` |
+| `recordFile` | `releaseAll` |
+| `repositoryUrl`, `portalUrl`, `userName`, `password` | `releaseAllPlan`, `releaseAll` |
+
+Inside the block, read-only typed task providers are `planTask`, `signingCheckTask`,
+`guardTask`, `prepareMavenTask`, `bundleAllTask` and `releaseAllTask`. They support
+`.configure { ... }` but cannot be reassigned. Repeated blocks configure the same instance
+and task providers. The parent exposes no `combinedRelease` property getter; configure
+it through the block, which registers tasks before executing its action.
+
+## Migration from the combined plugin
+
+Replace the retired `se.alipsa.nexus-release-all` ID with the original plugin and opt-in
+block. No 2.4.0 marker for the retired ID is published. Class-based
+`apply plugin: ReleaseAllSupportPlugin` also requires migration because that class was
+deleted. Existing released versions remain available. Combined-only roots should set the
+root opt-out above; applying the original plugin also applies signing and Maven publishing.
+
+Groovy named lookup (`tasks.named('releaseAllPlan')`) and `bundleAll { }` must appear
+after opt-in. Convention scripts evaluated earlier should use
+`tasks.withType(ReleaseAllPlanTask).configureEach { ... }`, with the appropriate task type.
+Eager consumer rules are supported, but `configureEach` avoids realizing tasks unnecessarily.
+Kotlin builds use typed named lookup after opt-in; combined task accessors such as
+`tasks.releaseAllPlan` are not generated during plugin application:
+
+```kotlin
+import se.alipsa.gradle.plugin.release.*
+
+plugins { id("se.alipsa.nexus-release-plugin") }
+
+tasks.withType<ReleaseAllPlanTask>().configureEach {
+    // Task-specific configuration; may precede opt-in.
+}
+nexusReleasePlugin {
+    combinedRelease {
+        sourceDirectory.set(layout.projectDirectory)
+        // Set the remaining shared paths explicitly.
+        bundleAllTask.configure { /* task-specific configuration */ }
+    }
+}
+tasks.named<ReleaseAllPlanTask>("releaseAllPlan") {
+    // Named lookup follows opt-in.
+}
+```
+
+Matrix's external build and release guide need this migration independently of the plugin
+release; migrate composite-build consumers before using this checkout.
 
 ## Manifest and publication policy
 
@@ -101,4 +196,9 @@ Central propagation remains separate from Portal publication. A failed record re
 component coordinates. Archive an `AVAILABLE` record before a new deployment; manually
 reconcile every unresolved record rather than deleting it to retry.
 
-CentralPortalClient uploads and deployment status checks use default connect (30 s) and caller deadlines (1800 s uploads, 60 s small calls). The single-publication extension timeout overrides do not apply here. Separate PublicationStatus and HEAD availability checks retain their existing behavior without this overall deadline.
+Parent `httpConnectTimeoutSeconds` and `httpRequestTimeoutSeconds` are not inherited
+by combined tasks. CentralPortalClient retains 30 s connect, 1800 s upload and 60 s
+small-call defaults. PublicationStatus availability probes in `releaseAllPlan` and
+`releaseAll` retain 15 s connect and 30 s per-request timeouts, separate from that client's
+overall caller deadline. `releaseAll` repository HEAD probes retain 15 s connect/read
+timeouts. Shared credential and URL inheritance does not imply timeout inheritance.
