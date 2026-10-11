@@ -1,10 +1,12 @@
 package se.alipsa.gradle.plugin.release
 
 import groovy.transform.CompileStatic
+import groovy.transform.PackageScope
 import org.gradle.api.tasks.TaskProvider
 
 /** Immutable task references returned by combined registration. */
 @CompileStatic
+@PackageScope
 final class CombinedReleaseTasks {
     final TaskProvider<ReleaseAllPlanTask> planTask
     final TaskProvider<SigningPreflightTask> signingCheckTask

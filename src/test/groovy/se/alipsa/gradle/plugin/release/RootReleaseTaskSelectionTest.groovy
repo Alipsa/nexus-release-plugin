@@ -89,7 +89,7 @@ assert nexusReleasePlugin.releaseTask == null
         assertNotNull(first.task(':tasks'))
         assertFalse(first.output.readLines().any { it.startsWith('bundle -') || it.startsWith('release -') || it == 'clearModuleMetadata' })
         assertTrue(runner('tasks', '--all').build().output.contains('Reusing configuration cache'))
-        new File(root, 'gradle.properties').text = 'nexusReleasePlugin.rootSinglePublicationTasks=true\n'
+        new File(root, 'gradle.properties').text = 'nexusReleasePlugin.rootSinglePublicationTasks=true   \n'
         def changed = runner('tasks', '--all').build()
         assertFalse(changed.output.contains('Reusing configuration cache'))
         assertTrue(changed.output.readLines().any { it.startsWith('bundle -') })
@@ -98,7 +98,7 @@ assert nexusReleasePlugin.releaseTask == null
         def failed = runner(':bundle').buildAndFail()
         assertTrue(failed.output.contains('nexusReleasePlugin.mavenPublication must be set'))
         new File(root, 'gradle.properties').text = 'nexusReleasePlugin.rootSinglePublicationTasks=invalid\n'
-        assertTrue(runner('help').buildAndFail().output.contains('must be true or false'))
+        assertTrue(runner('help').buildAndFail().output.contains("must be true or false, was 'invalid'"))
     }
 
     @Test void optOutWithoutCombinedBlockRegistersNeitherWorkflow() {
@@ -108,6 +108,7 @@ assert tasks.findByName('release') == null
 assert tasks.findByName('bundleAll') == null
 assert tasks.findByName('releaseAll') == null
 ''')
+        new File(root, 'gradle.properties').text = 'nexusReleasePlugin.rootSinglePublicationTasks=false   \n'
         assertTrue(runner('help', ':publish').build().output.contains('BUILD SUCCESSFUL'))
     }
 

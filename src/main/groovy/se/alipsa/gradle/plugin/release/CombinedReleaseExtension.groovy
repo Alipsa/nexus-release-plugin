@@ -3,7 +3,6 @@ package se.alipsa.gradle.plugin.release
 import groovy.transform.CompileStatic
 import org.gradle.api.file.DirectoryProperty
 import org.gradle.api.file.RegularFileProperty
-import org.gradle.api.model.ObjectFactory
 import org.gradle.api.provider.Property
 import org.gradle.api.tasks.TaskProvider
 import javax.inject.Inject
@@ -20,7 +19,7 @@ class CombinedReleaseExtension {
     private final TaskProvider<ReleaseAllTask> releaseAllTask
 
     @Inject
-    CombinedReleaseExtension(CombinedReleaseProperties shared, CombinedReleaseTasks tasks, ObjectFactory objects) {
+    CombinedReleaseExtension(CombinedReleaseProperties shared, CombinedReleaseTasks tasks) {
         this.shared = shared
         this.planTask = tasks.planTask
         this.signingCheckTask = tasks.signingCheckTask

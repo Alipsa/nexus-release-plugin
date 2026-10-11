@@ -1,6 +1,7 @@
 package se.alipsa.gradle.plugin.release
 
 import groovy.transform.CompileStatic
+import groovy.transform.PackageScope
 import org.gradle.api.file.DirectoryProperty
 import org.gradle.api.file.RegularFileProperty
 import org.gradle.api.model.ObjectFactory
@@ -8,6 +9,7 @@ import org.gradle.api.provider.Property
 
 /** Shared configuration created before any combined task can be realized. */
 @CompileStatic
+@PackageScope
 final class CombinedReleaseProperties {
     final DirectoryProperty sourceDirectory
     final RegularFileProperty manifestFile

@@ -35,10 +35,10 @@ class NexusReleasePlugin implements Plugin<Project> {
         project.pluginManager.apply('maven-publish')
 
         String rootSingleTasks = project == project.rootProject
-            ? project.providers.gradleProperty('nexusReleasePlugin.rootSinglePublicationTasks').orElse('true').get()
+            ? project.providers.gradleProperty('nexusReleasePlugin.rootSinglePublicationTasks').orElse('true').get().trim()
             : 'true'
         if (!(rootSingleTasks in ['true', 'false'])) {
-            throw new GradleException('nexusReleasePlugin.rootSinglePublicationTasks must be true or false')
+            throw new GradleException("nexusReleasePlugin.rootSinglePublicationTasks must be true or false, was '${rootSingleTasks}'")
         }
         if (rootSingleTasks == 'true') {
             def selectedPublication = extension.mavenPublication.orElse(project.provider {

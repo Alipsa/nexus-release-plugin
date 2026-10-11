@@ -1,6 +1,7 @@
 package se.alipsa.gradle.plugin.release
 
 import groovy.transform.CompileStatic
+import groovy.transform.PackageScope
 import org.gradle.api.model.ObjectFactory
 import org.gradle.api.tasks.TaskProvider
 
@@ -8,6 +9,7 @@ import org.gradle.api.tasks.TaskContainer
 
 /** Registers tasks against existing properties, including under eager consumer rules. */
 @CompileStatic
+@PackageScope
 final class CombinedReleaseRegistrar {
     static CombinedReleaseExtension register(TaskContainer tasks, ObjectFactory objects, NexusReleasePluginExtension parent) {
         def shared = new CombinedReleaseProperties(objects, parent)
