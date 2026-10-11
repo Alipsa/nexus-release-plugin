@@ -57,7 +57,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
 
       - name: Compatibility tests with Gradle ${{ matrix.gradle-version }}
-        run: ./gradlew test --tests "*WsClientTimeoutTest" --tests "*CentralUploadApiTest" --tests "*GradleCompatibilityMatrixTest" --tests "*BundleMetadataTest" -PtestGradleVersion=${{ matrix.gradle-version }} -PtestJavaVersion=${{ matrix.java-version }} -PrequireShellHarness=true -Dorg.gradle.java.installations.paths="${{ steps.compile_jdk.outputs.path }},${{ steps.runtime_jdk.outputs.path }}"
+        run: ./gradlew test --tests "*WsClientTimeoutTest" --tests "*CentralUploadApiTest" --tests "*GradleCompatibilityMatrixTest" --tests "*BundleMetadataTest" --tests "*CombinedTasksTest" --tests "*CombinedReleaseDslTest" --tests "*RootReleaseTaskSelectionTest" -PtestGradleVersion=${{ matrix.gradle-version }} -PtestJavaVersion=${{ matrix.java-version }} -PrequireShellHarness=true -Dorg.gradle.java.installations.paths="${{ steps.compile_jdk.outputs.path }},${{ steps.runtime_jdk.outputs.path }}"
 
       - name: Retain runtime proof reports
         if: always()

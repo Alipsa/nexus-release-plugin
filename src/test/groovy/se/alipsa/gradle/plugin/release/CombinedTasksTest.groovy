@@ -46,9 +46,17 @@ class CombinedTasksTest {
                 }
             }
             new File(root, 'build.gradle').text = """
-plugins { id 'se.alipsa.nexus-release-all' }
+plugins { id 'se.alipsa.nexus-release-plugin' }
+nexusReleasePlugin {
+  combinedRelease {
+    sourceDirectory = layout.projectDirectory
+    manifestFile = layout.buildDirectory.file('manifest.json')
+    stagingDirectory = layout.buildDirectory.dir('staging')
+    bundleFile = layout.buildDirectory.file('bundle.zip')
+    receiptFile = layout.buildDirectory.file('receipt.json')
+  }
+}
 releaseAllPlan {
-  sourceDirectory = layout.projectDirectory
   configuredRevision = providers.exec { commandLine 'git', 'rev-parse', 'HEAD' }.standardOutput.asText.get().trim()
   candidatesJson = '[{"projectPath":":platform","publication":"maven","pomFile":"platform.xml","groupId":"g","artifactId":"platform","version":"1","files":["platform-1.pom"]},{"projectPath":":slim","publication":"maven","pomFile":"slim.xml","groupId":"g","artifactId":"slim","version":"1","sourcesAndJavadocRequired":false,"files":["slim-1.pom","slim-1.jar"]}]'
   bomPom = layout.projectDirectory.file('matrix-bom.xml')
@@ -57,24 +65,14 @@ releaseAllPlan {
   repositoryUrl = '${base}/repo'
   portalUrl = '${base}/api/v1'
   userName = 'u'; password = 'p'
-  manifestFile = layout.buildDirectory.file('manifest.json')
 }
-bundleAll {
-  sourceDirectory = layout.projectDirectory
-  manifestFile = layout.buildDirectory.file('manifest.json')
-  stagingDirectory = layout.buildDirectory.dir('staging')
-  bundleFile = layout.buildDirectory.file('bundle.zip')
-  receiptFile = layout.buildDirectory.file('receipt.json')
+releaseAllSigningCheck {
+  configuredSigningJson = '{}'; strict = false
 }
 releaseAllGuard {
-  sourceDirectory = layout.projectDirectory
-  manifestFile = layout.buildDirectory.file('manifest.json')
   versionsJson = '{}'
 }
 releaseAllPrepareMaven {
-  sourceDirectory = layout.projectDirectory
-  manifestFile = layout.buildDirectory.file('manifest.json')
-  stagingDirectory = layout.buildDirectory.dir('staging')
   localRepository = layout.buildDirectory.dir('maven-local')
   mavenWorkDirectory = layout.projectDirectory
   verifierFile = layout.projectDirectory.file('verify.sh')
@@ -93,6 +91,8 @@ releaseAllPrepareMaven {
             assertEquals(4, ReleaseManifest.read(new File(root, 'build/manifest.json')).selected.size())
             assertEquals(['platform.xml', 'slim.xml', 'matrix-bom.xml', 'matrix-all.xml'], ReleaseManifest.read(new File(root, 'build/manifest.json')).selected*.pomFile)
             assertFalse(ReleaseManifest.read(new File(root, 'build/manifest.json')).selected.find { it.artifactId == 'matrix-all' }.dependencies.any { it.scope == 'test' })
+            run('releaseAllSigningCheck')
+            assertTrue(run('releaseAllSigningCheck').output.contains('Reusing configuration cache'))
             run('bundleAll')
             assertTrue(run('bundleAll').output.contains('Reusing configuration cache'))
             assertTrue(new File(root, 'build/bundle.zip').isFile())
@@ -134,16 +134,22 @@ releaseAllPrepareMaven {
             new File(root, 'settings.gradle').text = "rootProject.name='resume-fixture'"
             ReleaseManifest.write(new File(root, 'record.json'), [deploymentId: 'saved-id', state: 'UPLOADED', manifest: [selected: [[groupId: 'g', artifactId: 'a', version: '1', files: ['a-1.pom', 'a-1.jar']]]]])
             new File(root, 'build.gradle').text = """
-plugins { id 'se.alipsa.nexus-release-all' }
+plugins { id 'se.alipsa.nexus-release-plugin' }
+nexusReleasePlugin {
+  combinedRelease {
+    recordFile = layout.projectDirectory.file('record.json')
+    repositoryUrl = '${base}/repo'
+    portalUrl = '${base}/api/v1'
+  }
+}
 releaseAll {
-  recordFile = layout.projectDirectory.file('record.json')
   resumeId = 'saved-id'
-  repositoryUrl = '${base}/repo'
-  portalUrl = '${base}/api/v1'
 }
 """
-            run('releaseAll')
-            assertEquals(['HEAD', 'HEAD'], methods)
+            def resumed = run('releaseAll')
+            assertEquals([':releaseAll'], resumed.tasks*.path)
+            assertTrue(run('releaseAll').output.contains('Reusing configuration cache'))
+            assertEquals(['HEAD', 'HEAD', 'HEAD', 'HEAD'], methods)
             assertEquals('AVAILABLE', ReleaseManifest.read(new File(root, 'record.json')).state)
         } finally { server.stop(0) }
     }

@@ -11,6 +11,7 @@ import org.gradle.api.publish.PublishingExtension
 import org.gradle.api.publish.maven.MavenPublication
 import org.gradle.api.tasks.TaskProvider
 
+import java.util.function.Function
 import java.util.regex.Matcher
 import java.util.regex.Pattern
 
@@ -24,86 +25,102 @@ import java.util.regex.Pattern
 class NexusReleasePlugin implements Plugin<Project> {
 
     void apply(Project project) {
-        def extension = project.extensions.create('nexusReleasePlugin', NexusReleasePluginExtension)
+        def taskContainer = project.tasks
+        def objects = project.objects
+        Function<NexusReleasePluginExtension, CombinedReleaseExtension> registrar = { NexusReleasePluginExtension parent ->
+            CombinedReleaseRegistrar.register(taskContainer, objects, parent)
+        } as Function<NexusReleasePluginExtension, CombinedReleaseExtension>
+        def extension = project.extensions.create('nexusReleasePlugin', NexusReleasePluginExtension, registrar)
         project.pluginManager.apply('signing')
         project.pluginManager.apply('maven-publish')
 
-        def selectedPublication = extension.mavenPublication.orElse(project.provider {
-            throw new GradleException('nexusReleasePlugin.mavenPublication must be set')
-        })
-        TaskProvider<ClearModuleMetadataTask> clear = project.tasks.register('clearModuleMetadata', ClearModuleMetadataTask)
-        project.tasks.withType(GenerateModuleMetadata).configureEach { GenerateModuleMetadata metadata ->
-            metadata.dependsOn(extension.mavenPublication.map { MavenPublication pub ->
-                metadata.name == "generateMetadataFileFor${pub.name.capitalize()}Publication" ? [clear] : []
-            }.orElse([]))
+        String rootSingleTasks = project == project.rootProject
+            ? project.providers.gradleProperty('nexusReleasePlugin.rootSinglePublicationTasks').orElse('true').get()
+            : 'true'
+        if (!(rootSingleTasks in ['true', 'false'])) {
+            throw new GradleException('nexusReleasePlugin.rootSinglePublicationTasks must be true or false')
         }
-        // Resolve configured output paths as detached Files, avoiding a cleanup -> generation cycle.
-        def metadataPath = selectedPublication.map { MavenPublication pub ->
-            GenerateModuleMetadata metadata = project.tasks.findByName("generateMetadataFileFor${pub.name.capitalize()}Publication") as GenerateModuleMetadata
-            metadata == null ? null : metadata.outputFile.get().asFile
-        }
-        clear.configure { it.metadataFile.set(project.layout.file(metadataPath)) }
-
-        TaskProvider<BundleTask> bundleTask = project.tasks.register('bundle', BundleTask) { BundleTask task ->
-            task.dependsOn(selectedPublication.map { MavenPublication pub ->
-                "publish${pub.name.capitalize()}PublicationToMavenLocal".toString()
+        if (rootSingleTasks == 'true') {
+            def selectedPublication = extension.mavenPublication.orElse(project.provider {
+                throw new GradleException('nexusReleasePlugin.mavenPublication must be set')
             })
+            TaskProvider<ClearModuleMetadataTask> clear = project.tasks.register('clearModuleMetadata', ClearModuleMetadataTask)
+            project.tasks.withType(GenerateModuleMetadata).configureEach { GenerateModuleMetadata metadata ->
+                metadata.dependsOn(extension.mavenPublication.map { MavenPublication pub ->
+                    metadata.name == "generateMetadataFileFor${pub.name.capitalize()}Publication" ? [clear] : []
+                }.orElse([]))
+            }
+            // Resolve configured output paths as detached Files, avoiding a cleanup -> generation cycle.
+            def metadataPath = selectedPublication.map { MavenPublication pub ->
+                GenerateModuleMetadata metadata = project.tasks.findByName("generateMetadataFileFor${pub.name.capitalize()}Publication") as GenerateModuleMetadata
+                metadata == null ? null : metadata.outputFile.get().asFile
+            }
+            clear.configure { it.metadataFile.set(project.layout.file(metadataPath)) }
 
-            // Wire providers to extract publication data at configuration time
-            task.groupId.set(extension.mavenPublication.map { it.groupId })
-            task.artifactId.set(extension.mavenPublication.map { it.artifactId })
-            task.version.set(extension.mavenPublication.map { it.version })
-            task.publicationName.set(extension.mavenPublication.map { it.name })
+            TaskProvider<BundleTask> bundleTask = project.tasks.register('bundle', BundleTask) { BundleTask task ->
+                task.dependsOn(selectedPublication.map { MavenPublication pub ->
+                    "publish${pub.name.capitalize()}PublicationToMavenLocal".toString()
+                })
 
-            task.publicationDirectory.set(project.layout.buildDirectory.dir(
-                extension.mavenPublication.map { "publications/${it.name}" }
-            ))
+                // Wire providers to extract publication data at configuration time
+                task.groupId.set(extension.mavenPublication.map { it.groupId })
+                task.artifactId.set(extension.mavenPublication.map { it.artifactId })
+                task.version.set(extension.mavenPublication.map { it.version })
+                task.publicationName.set(extension.mavenPublication.map { it.name })
 
-            task.artifactEntries.set(selectedPublication.map { MavenPublication pub ->
-                Map<String, File> entries = [:]
-                pub.artifacts.each { MavenArtifact artifact ->
-                    String classifier = artifact.classifier ? "-${artifact.classifier}" : ''
-                    String name = "${pub.artifactId}-${pub.version}${classifier}.${artifact.extension}"
-                    if (entries.put(name, artifact.file) != null) throw new GradleException("Duplicate bundle entry: ${name}")
-                }
-                entries
-            })
-            task.artifactInputFiles.from(task.artifactEntries.map { entries -> entries.values().collectMany { File file -> [file, new File(file.path + '.asc')] } })
-            task.artifactInputFiles.builtBy(selectedPublication.map { it.artifacts })
-            task.moduleMetadataFile.set(project.layout.file(metadataPath))
-            task.moduleMetadataInput.from(metadataPath.map { File file ->
-                [file, new File(file.path + '.asc')]
-            })
+                task.publicationDirectory.set(project.layout.buildDirectory.dir(
+                    extension.mavenPublication.map { "publications/${it.name}" }
+                ))
 
-            task.bundleFile.set(project.layout.buildDirectory.file(
-                extension.mavenPublication.map { pub ->
-                    "zips/${pub.artifactId}-${pub.version}-bundle.zip"
-                }
-            ))
-        }
+                task.artifactEntries.set(selectedPublication.map { MavenPublication pub ->
+                    Map<String, File> entries = [:]
+                    pub.artifacts.each { MavenArtifact artifact ->
+                        String classifier = artifact.classifier ? "-${artifact.classifier}" : ''
+                        String name = "${pub.artifactId}-${pub.version}${classifier}.${artifact.extension}"
+                        if (entries.put(name, artifact.file) != null) throw new GradleException("Duplicate bundle entry: ${name}")
+                    }
+                    entries
+                })
+                task.artifactInputFiles.from(task.artifactEntries.map { entries -> entries.values().collectMany { File file -> [file, new File(file.path + '.asc')] } })
+                task.artifactInputFiles.builtBy(selectedPublication.map { it.artifacts })
+                task.moduleMetadataFile.set(project.layout.file(metadataPath))
+                task.moduleMetadataInput.from(metadataPath.map { File file ->
+                    [file, new File(file.path + '.asc')]
+                })
 
-        TaskProvider<ReleaseTask> releaseTask = project.tasks.register('release', ReleaseTask) { ReleaseTask task ->
-            // Make release depend on the bundle task
-            task.dependsOn(bundleTask)
+                task.bundleFile.set(project.layout.buildDirectory.file(
+                    extension.mavenPublication.map { pub ->
+                        "zips/${pub.artifactId}-${pub.version}-bundle.zip"
+                    }
+                ))
+            }
 
-            // Wire the bundle file from the bundle task
-            task.bundleFile.set(bundleTask.flatMap { it.bundleFile })
+            TaskProvider<ReleaseTask> releaseTask = project.tasks.register('release', ReleaseTask) { ReleaseTask task ->
+                // Make release depend on the bundle task
+                task.dependsOn(bundleTask)
 
-            // Wire project metadata
-            task.publicationVersion.set(extension.mavenPublication.map { it.version })
-            task.projectName.set(project.provider { project.name })
-            task.groupId.set(extension.mavenPublication.map { it.groupId })
-            task.artifactId.set(extension.mavenPublication.map { it.artifactId })
+                // Wire the bundle file from the bundle task
+                task.bundleFile.set(bundleTask.flatMap { it.bundleFile })
 
-            // Wire credentials from extension
-            task.httpConnectTimeoutSeconds.set(extension.httpConnectTimeoutSeconds)
-            task.httpRequestTimeoutSeconds.set(extension.httpRequestTimeoutSeconds)
-            task.nexusUrl.set(extension.nexusUrl)
-            task.userName.set(extension.userName)
-            task.password.set(extension.password)
-            task.statusCheckRetries.set(extension.statusCheckRetries)
-            task.statusCheckIntervalSeconds.set(extension.statusCheckIntervalSeconds)
-            task.initialStatusCheckDelaySeconds.set(extension.initialStatusCheckDelaySeconds)
+                // Wire project metadata
+                task.publicationVersion.set(extension.mavenPublication.map { it.version })
+                task.projectName.set(project.provider { project.name })
+                task.groupId.set(extension.mavenPublication.map { it.groupId })
+                task.artifactId.set(extension.mavenPublication.map { it.artifactId })
+
+                // Wire credentials from extension
+                task.httpConnectTimeoutSeconds.set(extension.httpConnectTimeoutSeconds)
+                task.httpRequestTimeoutSeconds.set(extension.httpRequestTimeoutSeconds)
+                task.nexusUrl.set(extension.nexusUrl)
+                task.userName.set(extension.userName)
+                task.password.set(extension.password)
+                task.statusCheckRetries.set(extension.statusCheckRetries)
+                task.statusCheckIntervalSeconds.set(extension.statusCheckIntervalSeconds)
+                task.initialStatusCheckDelaySeconds.set(extension.initialStatusCheckDelaySeconds)
+            }
+
+            extension.bundleTask = bundleTask
+            extension.releaseTask = releaseTask
         }
 
         TaskProvider<LatestMavenVersionsTask> latestMavenVersionsTask = project.tasks.register('latestMavenVersions', LatestMavenVersionsTask) { LatestMavenVersionsTask task ->
@@ -124,8 +141,6 @@ class NexusReleasePlugin implements Plugin<Project> {
         }
 
         // Expose tasks via the extension for external access
-        extension.bundleTask = bundleTask
-        extension.releaseTask = releaseTask
         extension.latestMavenVersionsTask = latestMavenVersionsTask
         extension.latestGithubReleaseTask = latestGithubReleaseTask
     }

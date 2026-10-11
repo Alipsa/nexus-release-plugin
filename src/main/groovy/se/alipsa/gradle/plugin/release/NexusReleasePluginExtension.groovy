@@ -1,6 +1,8 @@
 package se.alipsa.gradle.plugin.release
 
 import groovy.transform.CompileStatic
+import org.gradle.api.Action
+import java.util.function.Function
 import org.gradle.api.model.ObjectFactory
 import org.gradle.api.provider.Property
 import org.gradle.api.publish.maven.MavenPublication
@@ -25,6 +27,9 @@ class NexusReleasePluginExtension {
     final Property<String> githubToken
     final Property<String> githubRepo
 
+    private final Function<NexusReleasePluginExtension, CombinedReleaseExtension> registrar
+    private CombinedReleaseExtension combined
+
     // References to tasks with proper types
     TaskProvider<BundleTask> bundleTask
     TaskProvider<ReleaseTask> releaseTask
@@ -32,7 +37,8 @@ class NexusReleasePluginExtension {
     TaskProvider<LatestGithubReleaseTask> latestGithubReleaseTask
 
     @Inject
-    NexusReleasePluginExtension(ObjectFactory objects) {
+    NexusReleasePluginExtension(Function<NexusReleasePluginExtension, CombinedReleaseExtension> registrar, ObjectFactory objects) {
+        this.registrar = registrar
         httpConnectTimeoutSeconds = objects.property(Integer).convention(30)
         httpRequestTimeoutSeconds = objects.property(Integer).convention(1800)
         userName = objects.property(String)
@@ -46,6 +52,11 @@ class NexusReleasePluginExtension {
         githubApiBaseUrl = objects.property(String).convention('https://api.github.com')
         githubToken = objects.property(String)
         githubRepo = objects.property(String)
+    }
+
+    void combinedRelease(Action<CombinedReleaseExtension> action) {
+        if (combined == null) combined = registrar.apply(this)
+        action.execute(combined)
     }
 
     void setHttpConnectTimeoutSeconds(Integer seconds) { httpConnectTimeoutSeconds.set(seconds) }

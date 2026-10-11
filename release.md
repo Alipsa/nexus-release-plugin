@@ -1,5 +1,14 @@
 # Release history
 
+## Ver 2.4.0, in progress
+- Consolidate combined releases into `se.alipsa.nexus-release-plugin`, enabled by
+  `nexusReleasePlugin { combinedRelease { } }`, with shared path, credential and endpoint conventions.
+- Add the root-only `nexusReleasePlugin.rootSinglePublicationTasks=false` Gradle property to preserve
+  subproject task selectors and custom root tasks in combined-only builds.
+- Breaking migration: remove the separate combined plugin ID/marker and `ReleaseAllSupportPlugin` class.
+  Configure combined tasks after opt-in or through typed `configureEach`; Kotlin users need typed named
+  lookup instead of generated combined task accessors. See [the migration guide](combined-releases.md#migration-from-the-combined-plugin).
+
 ## Ver 2.3.0, 2026-10-11
 - Update build plugins: Ben Manes Versions 0.54.0 → 0.65.0 and Gradle Plugin Publish 2.1.1 → 2.2.1.
 - Update MockWebServer 5.3.2 → 5.5.0, Groovy 4.0.31 → 4.0.33, and JUnit Jupiter / Platform Launcher 6.0.3 → 6.1.3.
