@@ -90,6 +90,10 @@ The record is written as `SUBMITTING` before HTTP and stores the ID immediately 
 Definite HTTP 401/403/422 rejections are archived beside the active record as
 `*.rejected-<uuid>.json`, allowing a corrected new invocation. Other upload exceptions persist
 `UPLOAD_ERROR` with diagnostics; invalid ID responses retain the raw response in `SUBMITTING`.
+Connect failures also leave an active `UPLOAD_ERROR` record that must be manually reconciled
+before another upload. An initial connection failure usually means no upload was sent, but a
+307/308 redirect can send the first POST before the connection to its target times out.
+The client does not distinguish these cases, so it conservatively retains the record.
 Never automatically retry an unknown upload outcome. Resume only the saved ID, without
 source checks, builds or signing. Polling defaults to 60 attempts at 10-second intervals;
 Transient I/O errors are recorded and polling continues within that bound. Availability probes use HEAD.

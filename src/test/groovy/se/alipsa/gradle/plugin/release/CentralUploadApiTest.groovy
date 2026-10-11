@@ -155,7 +155,7 @@ class CentralUploadApiTest {
         'https://central.sonatype.com/api/v1/publisher/upload')
     // Inject a transport failure deterministically; unreachable hosts depend on routing/firewalls.
     def client = new CentralPortalClient(org.gradle.api.logging.Logging.getLogger(CentralUploadApiTest),
-        null, 'u', 'p') {
+        'https://portal.example.test/api/v1', 'u', 'p') {
       @Override
       Map<String, Object> postMultipart(String url, File file, String fieldName,
                                         String username, String password) {
@@ -167,8 +167,9 @@ class CentralUploadApiTest {
       File bundle = new File(dir, 'bundle.zip')
       bundle.text = 'bundle'
       GradleException failure = assertThrows(GradleException) { client.upload(bundle) }
-      assertTrue(failure.message.contains('Could not connect to Central Portal during upload'))
-      assertTrue(failure.message.contains('Check nexusUrl, network connectivity, and proxy settings'))
+      assertTrue(failure.message.contains('Could not connect to Central Portal at https://portal.example.test/api/v1 during upload'))
+      assertTrue(failure.message.contains('Check the URL, network connectivity, and proxy settings'))
+      assertFalse(failure.message.contains('nexusUrl'))
       assertFalse(failure.message.contains('outcome is unknown'))
       assertFalse(failure.message.contains('may already have reached'))
       assertFalse(failure.message.contains('publishing/deployments'))
