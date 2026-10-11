@@ -36,7 +36,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        gradle-version: ['8.13', '9.4.0']
+        gradle-version: ['8.13', '9.8.1']
         java-version: ['17', '21']
     name: Compatibility tests (Gradle ${{ matrix.gradle-version }}, JDK ${{ matrix.java-version }})
     steps:

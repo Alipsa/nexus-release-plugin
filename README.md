@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/Alipsa/nexus-release-plugin/actions/workflows/ci.yml/badge.svg)](https://github.com/Alipsa/nexus-release-plugin/actions/workflows/ci.yml)
 [![Java](https://img.shields.io/badge/Java-17%20%26%2021-blue)](https://docs.oracle.com/en/java/javase/17/)
-[![Groovy](https://img.shields.io/badge/Groovy-4.0.31-blue)](https://groovy-lang.org/)
+[![Groovy](https://img.shields.io/badge/Groovy-4.0.33-blue)](https://groovy-lang.org/)
 [![Javadoc](https://javadoc.io/badge2/se.alipsa.nexus-release-plugin/se.alipsa.nexus-release-plugin.gradle.plugin/javadoc.svg)](https://javadoc.io/doc/se.alipsa.nexus-release-plugin/se.alipsa.nexus-release-plugin.gradle.plugin)
 
 Automates the release process to Sonatype Central.
@@ -27,7 +27,7 @@ plugins {
   // your other plugins...
    id 'signing'
    id 'maven-publish'
-   id 'se.alipsa.nexus-release-plugin' version '2.1.2'
+   id 'se.alipsa.nexus-release-plugin' version '2.3.0'
 }
 
 publishing {
@@ -113,7 +113,7 @@ Example build.gradle:
 plugins {
   id 'groovy'
   id 'maven-publish'
-  id 'se.alipsa.nexus-release-plugin' version '2.2.0'
+  id 'se.alipsa.nexus-release-plugin' version '2.3.0'
 }
 
 group = 'se.alipsa'
@@ -216,6 +216,8 @@ The opt-in `se.alipsa.nexus-release-all` support plugin adds manifest planning, 
 
 ## Building the Plugin
 
+The build uses the Gradle 9.8.1 wrapper and compiles for Java 17.
+
 ```bash
 ./gradlew build                  # Build and test
 ./gradlew publishToMavenLocal    # Publish to local Maven repo
@@ -229,9 +231,11 @@ MIT License - see [LICENSE](LICENSE) for details.
 
 `httpConnectTimeoutSeconds` defaults to 30 and `httpRequestTimeoutSeconds` to 1800. Both accept 1–86400 seconds. Set them in `nexusReleasePlugin`; overrides apply to `release`. Uploads use the full request deadline. Deployment status checks and other small calls through `CentralPortalClient` use the shorter of 60 seconds and the configured deadline. The caller stops waiting even if an upload or response body stalls. Cancellation closed stalled connections in the verified runtime matrix; no stronger guarantee is made for arbitrary network implementations.
 
-`releaseAll` uses the default client timeouts. Its separate `PublicationStatus` and HEAD availability checks do not receive this overall deadline. Runtime testing covers JDK 17 and 21 with Gradle 8.13 and 9.4.0; compilation targets Java 17. Other daemon JDKs are outside the verified support matrix.
+`releaseAll` uses the default client timeouts. Its separate `PublicationStatus` and HEAD availability checks do not receive this overall deadline. Runtime testing covers JDK 17 and 21 with Gradle 8.13 and 9.8.1; compilation targets Java 17. Other daemon JDKs are outside the verified support matrix.
 
-`statusCheckRetries` is the number of additional checks after the first one. Transient errors consume a check and are retried within that budget. Authentication and permission errors fail immediately. Exhaustion reports an unknown or pending deployment that may still publish, with a Portal link.
+`statusCheckRetries` is the number of additional checks after the first one. Transient errors consume a check and are retried within that budget. Authentication and permission errors fail immediately and identify the deployment whose status check was rejected. Exhaustion reports an unknown or pending deployment that may still publish, with a Portal link.
+
+GET redirects remain supported, as do POST redirects that preserve the method (307/308). A POST redirected into a GET fails with a redirect-specific error instead of treating the target response as a deployment ID. Overall upload timeouts report an unknown outcome and advise checking [Portal deployments](https://central.sonatype.com/publishing/deployments) before retrying. Connect timeouts identify the Portal URL and suggest checking network and proxy settings. For `releaseAll`, connect failures retain an `UPLOAD_ERROR` record that must be reconciled before another upload; see [interrupted deployments](combined-releases.md#interrupted-deployments).
 
 Bundles use Maven coordinate names and include all artifacts of the selected publication with a main JAR, including classified ZIPs and generated Gradle Module Metadata. Every primary entry needs a nonempty signature and MD5/SHA-1 checksums. JAR-producing packaging such as `bundle`, `maven-plugin`, and `ejb` remains supported. Publications without a main JAR are rejected by `release`; use `releaseAll` for pom-packaged publications. `bundle` installs only the selected publication to Maven local. Ordinary `publish` and `publishToMavenLocal` builds work without setting `mavenPublication`; cleanup attaches only when a publication is selected.
 

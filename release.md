@@ -1,6 +1,14 @@
 # Release history
 
-## Ver 2.3.0, in progress
+## Ver 2.3.0, 2026-10-11
+- Update build plugins: Ben Manes Versions 0.54.0 → 0.65.0 and Gradle Plugin Publish 2.1.1 → 2.2.1.
+- Update MockWebServer 5.3.2 → 5.5.0, Groovy 4.0.31 → 4.0.33, and JUnit Jupiter / Platform Launcher 6.0.3 → 6.1.3.
+- Update the Gradle wrapper 9.5.0 → 9.8.1.
+- Fix: POST redirects that become GETs now fail with a redirect-specific error; GET and method-preserving 307/308 redirects remain supported.
+- Fix: overall upload timeouts now explain that the deployment outcome is unknown and advise checking the Portal before retrying.
+  Connect timeouts instead identify the Portal URL and suggest checking network and proxy settings. Combined release connect failures
+  conservatively retain an `UPLOAD_ERROR` record requiring reconciliation, since a redirected POST may already have been sent.
+- Fix: status-check 401/403 errors now include the deployment ID and confirm that the upload succeeded.
 - Fix: Central Portal requests through `WsClient`/`CentralPortalClient` now have connect timeouts and an overall
   caller deadline, covering uploads and deployment status checks for `release` and `releaseAll`, including responses that stall after headers.
   New properties `httpConnectTimeoutSeconds` (default 30) and `httpRequestTimeoutSeconds` (default 1800), each
