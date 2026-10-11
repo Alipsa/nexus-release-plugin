@@ -3,7 +3,7 @@ plugins {
   id 'signing'
   id 'maven-publish'
   id "com.gradle.plugin-publish" version "2.2.1"
-  id "com.github.ben-manes.versions" version "0.65.0"
+  id "io.github.ben-manes.versions" version "0.65.0"
   id 'se.alipsa.nexus-release-plugin' version '2.2.0'
 }
 
@@ -160,7 +160,7 @@ test {
 }
 
 signing {
-  if (project.properties['signing.keyId'] != null) {
+  if (project.findProperty('signing.keyId') != null) {
     project.logger.lifecycle("Signing artifacts...")
     sign publishing.publications.mavenCentral
   } else {
