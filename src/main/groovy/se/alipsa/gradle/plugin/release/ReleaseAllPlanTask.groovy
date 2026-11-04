@@ -39,17 +39,31 @@ abstract class ReleaseAllPlanTask extends DefaultTask {
         if (ReleaseManifest.git(root, 'rev-parse', 'HEAD') != configuredRevision.get()) throw new IllegalStateException('HEAD changed since publication configuration; restart planning')
         if (ReleaseManifest.git(root, 'status', '--porcelain')) throw new IllegalStateException('Release planning requires a clean Git working tree')
         List<PublicationDescriptor> candidates = []
+        Set<String> inspectedPoms = [] as Set
         new JsonSlurper().parseText(candidatesJson.get()).each { Map registered ->
             if (!(registered.files instanceof List) || registered.files.empty) {
                 throw new IllegalArgumentException("Candidate ${registered.projectPath ?: registered.artifactId} must declare a nonempty files list")
             }
-            Map parsed = ReleasePom.read(new File(root, registered.pomFile))
+            File candidatePom = new File(root, registered.pomFile)
+            // A known project-publication problem can also make Gradle's POM generation fail
+            // (e.g. conflicting dependency publications). Report its exclusion without generation.
+            boolean inspectPom = !(registered.skipPomInspection && registered.exclusionReasons)
+            Map parsed = inspectPom ? ReleasePom.read(candidatePom) : [packaging: 'jar', dependencies: [], management: []]
+            if (inspectPom) inspectedPoms.add(registered.pomFile)
+            List<String> files = new ArrayList<String>(registered.files)
+            // Gradle advertises module metadata in the generated POM using this public
+            // redirection marker. This avoids consulting internal MavenPublication components.
+            if (inspectPom && registered.detectModuleMetadata && candidatePom.getText('UTF-8').contains('<!-- do_not_remove: published-with-gradle-metadata -->')) {
+                String metadataName = "${registered.artifactId}-${registered.version}.module".toString()
+                if (!files.contains(metadataName)) files.add(metadataName)
+            }
             def publication = new PublicationDescriptor(projectPath: registered.projectPath, publication: registered.publication,
                 pomFile: registered.pomFile, coordinate: new ReleaseCoordinate(registered.groupId, registered.artifactId, registered.version),
                 packaging: registered.packaging ?: parsed.packaging,
                 sourcesAndJavadocRequired: registered.sourcesAndJavadocRequired != false,
                 dependencies: (registered.dependencies ?: []) + (parsed.dependencies + parsed.management),
-                publishedDependencies: parsed.dependencies, publishedManagement: parsed.management, files: registered.files ?: [])
+                publishedDependencies: parsed.dependencies, publishedManagement: parsed.management, files: files,
+                reasons: new ArrayList<String>(registered.exclusionReasons ?: []))
             candidates.add(publication)
         }
         candidates.groupBy { it.projectPath }.each { String path, List publications ->
@@ -72,6 +86,7 @@ abstract class ReleaseAllPlanTask extends DefaultTask {
                 publishedDependencies: parsed.dependencies.findAll { it.scope != 'test' }, publishedManagement: parsed.is(bom) ? parsed.management : [], files: ["${prefix}.pom".toString()])
             if (parsed.packaging == 'jar') publication.files.add("${prefix}.jar".toString())
             candidates.add(publication)
+            inspectedPoms.add(pomPath)
         }
         Set<String> candidateNames = candidates.collect { "${it.coordinate.groupId}:${it.coordinate.artifactId}".toString() } as Set
         // A subset must still check omitted siblings in each candidate's namespace.
@@ -96,7 +111,7 @@ abstract class ReleaseAllPlanTask extends DefaultTask {
         }
         Map<String, String> hashes = [:]
         ReleaseManifest.checkTrackedFlags(root)
-        candidates.collect { it.pomFile }.unique().each { String path ->
+        inspectedPoms.each { String path ->
             File input = new File(root, path)
             if (!input.isFile()) throw new IllegalStateException("Missing publication input: ${path}")
             hashes[path] = ReleaseChecksums.checksum(input, 'SHA-256')

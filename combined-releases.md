@@ -47,13 +47,19 @@ Each named project must configure `maven-publish` and a Maven publication. A sin
 publication is selected automatically. For multiple publications, explicitly choose one with
 that project's `nexusReleasePlugin.mavenPublication`; ambiguity fails with an explanation.
 Coordinates and artifact names come from that publication, including custom artifact IDs.
-Normal JAR publications must include sources and Javadoc JARs, for example using
+Publication inspection is deferred until combined-release tasks are configured. Normal JAR
+publications must include sources and Javadoc JARs, for example using
 `java { withSourcesJar(); withJavadocJar() }` before `from components.java`. POM-only
-publications are supported. Generated Gradle Module Metadata is included with its signature.
+publications are supported. Gradle's metadata redirection marker in the generated POM
+determines whether Module Metadata is included with its signature; no internal publication
+component API is used. Metadata-enabled, disabled, and POM-only publications are tested on
+Gradle 8.13 and 9.8.1.
 
 Configure Gradle signing credentials in each selected module using the usual signing
-properties or `signing { useInMemoryPgpKeys(...) }`. The plugin applies `signing` and adds
-the publication signing task if needed. Credentials and the confirmed Portal fixture remain
+properties or `signing { useInMemoryPgpKeys(...) }`. When combined staging is scheduled, the
+plugin applies `signing` and adds publication signing if needed. Setting `modules` does not
+add signing to ordinary `publishToMavenLocal` or snapshot publishing invocations. Signing
+explicitly configured by the consumer retains its existing requirements. Credentials and the confirmed Portal fixture remain
 release prerequisites; the fixture format and availability policy are described below.
 
 ```sh
@@ -67,6 +73,10 @@ Only eligible named modules are staged and included. Already-published and SNAPS
 are excluded. Dependencies on omitted modules must already be published at their exact
 configured coordinates; dependencies in a different namespace and `compileOnly` project
 dependencies are checked too. Tests and system dependencies do not affect eligibility.
+An internal project dependency without a Maven publication, or with ambiguous publications,
+excludes the dependent candidate during planning with its project path and configuration in
+the reason, before attempting to generate its POM. These release checks do not run in ordinary
+`help`, compilation, or local publication builds; Gradle's own publication validation still applies.
 Ordinary project dependencies may still build an omitted sibling's JAR for compilation;
 that sibling's publication is not signed, staged, or bundled. Changing the named subset
 requires a new plan. The source repository must remain clean and committed, with generated

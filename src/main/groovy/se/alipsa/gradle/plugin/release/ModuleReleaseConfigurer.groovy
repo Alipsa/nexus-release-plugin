@@ -10,7 +10,6 @@ import org.gradle.api.publish.PublishingExtension
 import org.gradle.api.publish.maven.MavenPublication
 import org.gradle.api.publish.maven.tasks.GenerateMavenPom
 import org.gradle.api.publish.maven.tasks.PublishToMavenRepository
-import org.gradle.api.publish.tasks.GenerateModuleMetadata
 import org.gradle.plugins.signing.Sign
 import org.gradle.plugins.signing.SigningExtension
 
@@ -35,66 +34,34 @@ final class ModuleReleaseConfigurer {
         extension.receiptFile.convention(project.layout.buildDirectory.file('releaseAll/bundle-receipt.json'))
         extension.recordFile.convention(project.layout.buildDirectory.file('releaseAll/deployment.json'))
         if (extension.releaseAllTask.get().resumeId.getOrElse('')) return
-        File source = extension.sourceDirectory.get().asFile
-        List<Map> descriptors = []
-        Map<String, Boolean> signing = [:]
-        List pomTasks = []
-        Map<String, Map> publications = [:]
-        paths.each { String path ->
-            Project module = project.findProject(path)
-            if (module == null) throw new GradleException("Unknown combined release module '${path}'")
-            MavenPublication publication = publicationFor(module)
-            String capitalized = publication.name.capitalize()
-            def pomTask = module.tasks.named("generatePomFileFor${capitalized}Publication", GenerateMavenPom)
-            File pom = pomTask.get().destination
-            if (!pom.canonicalPath.startsWith(source.canonicalPath + File.separator)) {
-                throw new GradleException("Publication POM for ${path} must be inside combinedRelease.sourceDirectory")
-            }
-            String prefix = "${publication.artifactId}-${publication.version}"
-            Map descriptor = [projectPath: path, publication: publication.name,
-                groupId: publication.groupId, artifactId: publication.artifactId, version: publication.version,
-                pomFile: source.toPath().toAbsolutePath().normalize().relativize(pom.toPath().toAbsolutePath().normalize()).toString(),
-                files: ["${prefix}.pom".toString()], dependencies: projectEdges(module)]
-            publication.artifacts.each { artifact ->
-                String classifier = artifact.classifier ? '-' + artifact.classifier : ''
-                descriptor.files.add("${prefix}${classifier}.${artifact.extension}".toString())
-            }
-            GenerateModuleMetadata metadata = module.tasks.findByName("generateMetadataFileFor${capitalized}Publication") as GenerateModuleMetadata
-            if (metadata?.enabled && publication.component.present) descriptor.files.add("${prefix}.module".toString())
-            if (descriptor.files.unique(false).size() != descriptor.files.size()) {
-                throw new GradleException("Duplicate publication artifact filenames for ${path}")
-            }
-            descriptors.add(descriptor)
-            pomTasks.add(pomTask)
-            module.pluginManager.apply('signing')
-            SigningExtension signingExtension = module.extensions.getByType(SigningExtension)
-            if (module.tasks.findByName("sign${capitalized}Publication") == null) signingExtension.sign(publication)
-            signing[path] = signingExtension.signatory != null
-            publications[path] = [project: module, publication: publication]
-        }
+
+        // Configure publication details only when release tasks are realized. This closure is
+        // consumed by configuration actions; tasks receive detached values, never Project models.
+        Closure model = { describe(project, extension, paths) }.memoize()
         extension.planTask.configure { task ->
-            task.candidatesJson.convention(JsonOutput.toJson(descriptors))
+            Map description = model.call()
+            task.candidatesJson.convention(description.candidatesJson)
             task.modulePaths.set(paths)
-            task.releaseNamespaces.convention(descriptors.collect { it.groupId }.unique())
+            File source = extension.sourceDirectory.get().asFile
             task.configuredRevision.convention(project.providers.exec {
                 commandLine('git', '-C', source.absolutePath, 'rev-parse', 'HEAD')
             }.standardOutput.asText.map { it.trim() })
-            task.candidatePoms.from(pomTasks)
+            task.candidatePoms.from(description.pomTasks)
         }
         extension.signingCheckTask.configure { task ->
-            task.configuredSigningJson.convention(JsonOutput.toJson(signing))
+            task.configuredSigningJson.convention(model.call().signingJson)
             task.strict.convention(true)
             task.dependsOn(extension.guardTask)
         }
         extension.guardTask.configure { task ->
-            task.versionsJson.convention(JsonOutput.toJson(descriptors.collectEntries { [(it.projectPath): it.version] }))
+            task.versionsJson.convention(model.call().versionsJson)
             task.modulePaths.set(paths)
         }
 
         // Resolve only when bundling is scheduled, even if a consumer eagerly realizes tasks.
         // Finalization prevents repeated dependency queries from registering the repository twice.
         def staging = project.objects.listProperty(Object)
-        staging.set(project.providers.provider { stagingTasks(project, extension, publications) })
+        staging.set(project.providers.provider { stagingTasks(project, extension, paths) })
         staging.finalizeValueOnRead()
         extension.bundleAllTask.configure { task ->
             task.dependsOn(extension.guardTask)
@@ -106,17 +73,64 @@ final class ModuleReleaseConfigurer {
         }
     }
 
-    private static List stagingTasks(Project project, CombinedReleaseExtension extension, Map<String, Map> publications) {
+    private static Map describe(Project project, CombinedReleaseExtension extension, List<String> paths) {
+        File source = extension.sourceDirectory.get().asFile
+        List<Map> descriptors = []
+        Map<String, Boolean> signing = [:]
+        List pomTasks = []
+        paths.each { String path ->
+            Project module = project.findProject(path)
+            if (module == null) throw new GradleException("Unknown combined release module '${path}'")
+            MavenPublication publication = publicationFor(module)
+            String capitalized = publication.name.capitalize()
+            def pomTask = module.tasks.named("generatePomFileFor${capitalized}Publication", GenerateMavenPom)
+            File pom = pomTask.get().destination
+            if (!pom.canonicalPath.startsWith(source.canonicalPath + File.separator)) {
+                throw new GradleException("Publication POM for ${path} must be inside combinedRelease.sourceDirectory")
+            }
+            String prefix = "${publication.artifactId}-${publication.version}"
+            Map projectDependencies = projectEdges(module)
+            Map descriptor = [projectPath: path, publication: publication.name,
+                groupId: publication.groupId, artifactId: publication.artifactId, version: publication.version,
+                pomFile: source.toPath().toAbsolutePath().normalize().relativize(pom.toPath().toAbsolutePath().normalize()).toString(),
+                files: ["${prefix}.pom".toString()], detectModuleMetadata: true,
+                dependencies: projectDependencies.edges, exclusionReasons: projectDependencies.reasons,
+                skipPomInspection: !projectDependencies.reasons.empty]
+            publication.artifacts.each { artifact ->
+                String classifier = artifact.classifier ? '-' + artifact.classifier : ''
+                descriptor.files.add("${prefix}${classifier}.${artifact.extension}".toString())
+            }
+            if (descriptor.files.unique(false).size() != descriptor.files.size()) {
+                throw new GradleException("Duplicate publication artifact filenames for ${path}")
+            }
+            descriptors.add(descriptor)
+            if (projectDependencies.reasons.empty) pomTasks.add(pomTask)
+            module.pluginManager.apply('signing')
+            SigningExtension signingExtension = module.extensions.getByType(SigningExtension)
+            signing[path] = signingExtension.signatory != null
+        }
+        [candidatesJson: JsonOutput.toJson(descriptors), signingJson: JsonOutput.toJson(signing),
+            versionsJson: JsonOutput.toJson(descriptors.collectEntries { [(it.projectPath): it.version] }), pomTasks: pomTasks]
+    }
+
+    private static List stagingTasks(Project project, CombinedReleaseExtension extension, List<String> paths) {
         // Only bundling reads the saved plan. Discovery does not consume its own output.
         // The provider invalidates the configuration cache when the selected subset changes.
         String manifestText = project.providers.fileContents(extension.manifestFile).asText.orNull
         Map manifest = manifestText ? new JsonSlurper().parseText(manifestText) as Map : [:]
         List stagedTasks = []
         (manifest.selected ?: []).each { Map selected ->
-            Map configured = publications[selected.projectPath]
-            if (configured == null || configured.publication.name != selected.publication) return
-            Project module = configured.project
-            MavenPublication publication = configured.publication
+            if (!(selected.projectPath in paths)) return
+            Project module = project.project(selected.projectPath)
+            MavenPublication publication = publicationFor(module)
+            if (publication.name != selected.publication) return
+            // Signing a publication attaches signatures to every publish of that publication.
+            // Add it only to the combined staging graph, preserving ordinary local/snapshot builds
+            // and any signing requirements explicitly configured by the consumer.
+            module.pluginManager.apply('signing')
+            if (module.tasks.findByName("sign${publication.name.capitalize()}Publication") == null) {
+                module.extensions.getByType(SigningExtension).sign(publication)
+            }
             def repositories = module.extensions.getByType(PublishingExtension).repositories
             if (repositories.findByName('combinedReleaseStaging') != null) {
                 throw new GradleException("Repository name 'combinedReleaseStaging' in ${module.path} is reserved for combined releases")
@@ -144,32 +158,41 @@ final class ModuleReleaseConfigurer {
         stagedTasks
     }
 
-    private static MavenPublication publicationFor(Project module) {
+    private static MavenPublication publicationFor(Project module, String label = 'Combined release module') {
         def chosen = module.extensions.findByType(NexusReleasePluginExtension)?.mavenPublication
         if (chosen?.present) return chosen.get()
         def publications = module.extensions.findByType(PublishingExtension)?.publications?.withType(MavenPublication)
         if (publications == null || publications.empty) {
-            throw new GradleException("Combined release module '${module.path}' has no Maven publication; configure maven-publish first")
+            throw new GradleException("${label} '${module.path}' has no Maven publication; configure maven-publish first")
         }
         if (publications.size() != 1) {
-            throw new GradleException("Combined release module '${module.path}' has multiple Maven publications; select one with nexusReleasePlugin.mavenPublication")
+            throw new GradleException("${label} '${module.path}' has multiple Maven publications; select one with nexusReleasePlugin.mavenPublication")
         }
         publications.first()
     }
 
-    private static List<Map> projectEdges(Project module) {
+    private static Map projectEdges(Project module) {
         List<Map> edges = []
+        List<String> reasons = []
         module.configurations.findAll { configuration ->
             configuration.name in ['api', 'implementation', 'compileOnly', 'compileOnlyApi', 'runtime', 'runtimeOnly', 'compileClasspath', 'runtimeClasspath']
         }.each { configuration ->
             configuration.allDependencies.withType(ProjectDependency).each { ProjectDependency dependency ->
                 Project target = module.rootProject.project(dependency.path)
-                MavenPublication publication = publicationFor(target)
-                edges.add([groupId: publication.groupId, artifactId: publication.artifactId, version: publication.version,
-                    projectPath: target.path, scope: configuration.name.startsWith('runtime') ? 'runtime' : 'compile',
-                    origin: "${module.path}:${configuration.name}".toString()])
+                Map edge = [projectPath: target.path, scope: configuration.name.startsWith('runtime') ? 'runtime' : 'compile',
+                    origin: "${module.path}:${configuration.name}".toString()]
+                try {
+                    MavenPublication publication = publicationFor(target, 'Project dependency')
+                    edge.putAll(groupId: publication.groupId, artifactId: publication.artifactId, version: publication.version)
+                } catch (GradleException unavailable) {
+                    // Retain provenance and exclude during planning instead of making help/build
+                    // fail for unpublished internal projects or ambiguous dependency publications.
+                    edge.putAll(groupId: target.group.toString(), artifactId: target.name, version: target.version.toString())
+                    reasons.add("${unavailable.message} (${edge.origin})".toString())
+                }
+                edges.add(edge)
             }
         }
-        edges.unique()
+        [edges: edges.unique(), reasons: reasons.unique()]
     }
 }

@@ -11,6 +11,107 @@ import static org.junit.jupiter.api.Assertions.*
 class ModuleReleaseTest {
     @TempDir File root
 
+    @ParameterizedTest
+    @ValueSource(strings = ['1.0-SNAPSHOT', '1.0'])
+    void ordinaryLocalPublishingDoesNotRequireOrAddSigning(String version) {
+        withServer { String base, List requests ->
+            fixture(base, "modules = [':api']", false, false)
+            ['core', 'api'].each { String name ->
+                File build = new File(root, "${name}/build.gradle")
+                build.text = build.text.replace("version = '1.0'", "version = '${version}'")
+            }
+            def arguments = [':api:publishToMavenLocal', "-Dmaven.repo.local=${new File(root, 'build/maven-local').absolutePath}".toString(),
+                '--configuration-cache', '--configuration-cache-problems=fail', '--stacktrace']
+            def result = runner(':api:publishToMavenLocal').withArguments(arguments).build()
+            assertNull(result.task(':api:signMavenPublication'))
+            assertNull(result.task(':releaseAllGuard'))
+            assertTrue(new File(root, "build/maven-local/example/api-artifact/${version}/api-artifact-${version}.pom").isFile())
+            assertFalse(new File(root, "build/maven-local/example/api-artifact/${version}/api-artifact-${version}.pom.asc").exists())
+            assertTrue(runner(':api:publishToMavenLocal').withArguments(arguments).build().output.contains('Reusing configuration cache'))
+            assertTrue(requests.empty)
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = ['none', 'multiple', 'conflicting'])
+    void internalPublicationProblemsOnlyExcludeCandidatesDuringPlanning(String publications) {
+        withServer { String base, List requests ->
+            fixture(base, "modules = [':api']")
+            File internal = new File(root, 'core/build.gradle')
+            if (publications == 'none') {
+                internal.text = "plugins { id 'java-library' }\ngroup = 'example'; version = '1.0'\n"
+            } else {
+                internal << "\npublishing { publications { extra(MavenPublication) { artifactId = '${publications == 'conflicting' ? 'other-core-artifact' : 'core-artifact'}'; from components.java } } }\n"
+            }
+            new File(root, 'build.gradle') << '''
+if (gradle.startParameter.taskNames == ['help']) {
+    subprojects {
+        tasks.withType(org.gradle.api.publish.maven.tasks.GenerateMavenPom).configureEach {
+            throw new GradleException('Ordinary help realized a release POM task')
+        }
+    }
+}
+'''
+            commit()
+            run('help')
+            def result = run(':api:assemble')
+            assertNull(result.task(':releaseAllPlan'))
+            if (publications != 'conflicting') {
+                // Gradle itself rejects POM generation for conflicting publication coordinates.
+                def local = runner(':api:publishToMavenLocal').withArguments(':api:publishToMavenLocal',
+                    "-Dmaven.repo.local=${new File(root, 'build/maven-local').absolutePath}".toString(),
+                    '--configuration-cache', '--configuration-cache-problems=fail', '--stacktrace').build()
+                assertNull(local.task(':api:signMavenPublication'))
+            }
+            assertTrue(requests.empty)
+            def plan = run('releaseAllPlan')
+            assertNull(plan.task(':api:generatePomFileForMavenPublication'))
+            Map manifest = ReleaseManifest.read(new File(root, 'build/releaseAll/manifest.json'))
+            assertEquals([], manifest.selected)
+            assertTrue(manifest.excluded.first().reasons.any {
+                it.contains("Project dependency ':core'") && it.contains(publications == 'none' ? 'no Maven publication' : 'multiple Maven publications')
+            })
+        }
+    }
+
+    @Test void combinedStagingStillRequiresSigningKeys() {
+        withServer { String base, List requests ->
+            fixture(base, "modules = [':api', ':core']", false, false)
+            run('releaseAllPlan')
+            def failed = runner('bundleAll').buildAndFail()
+            assertTrue(failed.output.contains('Signing is not configured for:'))
+            assertNull(failed.task(':api:publishMavenPublicationToCombinedReleaseStagingRepository'))
+        }
+    }
+
+    @Test void consumerConfiguredSigningRequirementsArePreserved() {
+        withServer { String base, List requests ->
+            fixture(base, "modules = [':api']", false, false)
+            new File(root, 'api/build.gradle') << "\napply plugin: 'signing'\nsigning { required = true; sign publishing.publications.maven }\n"
+            def failed = runner(':api:publishToMavenLocal').withArguments(':api:publishToMavenLocal',
+                "-Dmaven.repo.local=${new File(root, 'build/maven-local').absolutePath}".toString(),
+                '--configuration-cache', '--configuration-cache-problems=fail', '--stacktrace').buildAndFail()
+            assertTrue(failed.output.contains('has no configured signatory'))
+            assertNull(failed.task(':releaseAllGuard'))
+            assertTrue(requests.empty)
+        }
+    }
+
+    @Test void disabledGradleMetadataIsNotPlannedOrBundled() {
+        withServer { String base, List requests ->
+            fixture(base, "modules = [':core']")
+            new File(root, 'core/build.gradle') << '\ntasks.withType(org.gradle.api.publish.tasks.GenerateModuleMetadata).configureEach { enabled = false }\n'
+            commit()
+            run('releaseAllPlan')
+            Map publication = ReleaseManifest.read(new File(root, 'build/releaseAll/manifest.json')).selected.first()
+            assertFalse(publication.files.any { it.endsWith('.module') })
+            run('bundleAll')
+            new ZipFile(new File(root, 'build/releaseAll/bundle.zip')).withCloseable { zip ->
+                assertFalse(zip.entries().any { it.name.contains('.module') })
+            }
+        }
+    }
+
     @Test void namedSubsetPlansBuildsSignsAndBundlesRealPublications() {
         withServer { String base, List requests ->
             fixture(base, "modules = [':api', 'core']")
@@ -190,7 +291,7 @@ nexusReleasePlugin {
         }
     }
 
-    private void fixture(String base, String selection, boolean compileOnly = false) {
+    private void fixture(String base, String selection, boolean compileOnly = false, boolean signingKeys = true) {
         new File(root, 'settings.gradle').text = "rootProject.name='module-release-fixture'\ninclude 'core', 'api', 'unused'\n"
         new File(root, '.gitignore').text = 'build/\n.gradle/\n'
         new File(root, 'fixture.json').text = '{"namespacePolicy":"groupId","published":{"body":{"published":true}},"absent":{"body":{"published":false}}}'
@@ -206,11 +307,11 @@ nexusReleasePlugin {
     }
 }
 """
-        String key = TestFixtures.generateTestPrivateKey('test@example.com', new char[0])
+        String key = signingKeys ? TestFixtures.generateTestPrivateKey('test@example.com', new char[0]) : ''
         ['core', 'api', 'unused'].each { String name ->
             File dir = new File(root, name); dir.mkdirs()
             new File(dir, 'build.gradle').text = """
-plugins { id 'java-library'; id 'maven-publish'; id 'signing' }
+plugins { id 'java-library'; id 'maven-publish'${signingKeys ? "; id 'signing'" : ''} }
 group = '${compileOnly && name == 'core' ? 'other' : 'example'}'
 version = '1.0'
 java { withSourcesJar(); withJavadocJar() }
@@ -228,7 +329,7 @@ publishing {
         }
     }
 }
-signing { useInMemoryPgpKeys('''${key}''', '') }
+${signingKeys ? "signing { useInMemoryPgpKeys('''${key}''', '') }" : ''}
 ${name == 'api' ? "dependencies { ${compileOnly ? 'compileOnly' : 'api'} project(':core') }" : ''}
 """
             File source = new File(dir, "src/main/java/${name.capitalize()}.java")

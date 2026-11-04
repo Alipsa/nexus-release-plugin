@@ -15,6 +15,12 @@
 - Cover real multi-module subsets, omitted published/unpublished dependencies, optional
   static POMs, signing and ZIP contents, stale module selections, and configuration-cache reuse.
 - Close the optional-POM test's ZIP archive after inspecting it.
+- Keep automatic signing confined to combined staging so ordinary local/snapshot publishing
+  does not require signing keys. Preserve consumer-configured signing requirements.
+- Inspect publication details lazily for combined-release tasks; unpublished or ambiguous
+  internal project dependencies become plan exclusions instead of breaking ordinary builds.
+- Detect Gradle Module Metadata through the generated POM's public redirection marker,
+  with enabled, disabled, and POM-only publication coverage on Gradle 8.13 and 9.8.1.
 
 ## Ver 2.4.0, 2026-10-11
 - Consolidate combined releases into `se.alipsa.nexus-release-plugin`, enabled by
