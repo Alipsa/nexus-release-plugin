@@ -15,8 +15,8 @@ abstract class ReleaseAllPlanTask extends DefaultTask {
     @Input abstract Property<String> getConfiguredRevision()
     @Input abstract org.gradle.api.provider.ListProperty<String> getReleaseNamespaces()
     @Internal abstract DirectoryProperty getSourceDirectory()
-    @InputFile @PathSensitive(PathSensitivity.RELATIVE) abstract RegularFileProperty getBomPom()
-    @InputFile @PathSensitive(PathSensitivity.RELATIVE) abstract RegularFileProperty getAllPom()
+    @InputFile @Optional @PathSensitive(PathSensitivity.RELATIVE) abstract RegularFileProperty getBomPom()
+    @InputFile @Optional @PathSensitive(PathSensitivity.RELATIVE) abstract RegularFileProperty getAllPom()
     @Input abstract Property<String> getRepositoryUrl()
     @Input abstract Property<String> getPortalUrl()
     @Internal abstract Property<String> getUserName()
@@ -51,10 +51,12 @@ abstract class ReleaseAllPlanTask extends DefaultTask {
         candidates.groupBy { it.projectPath }.each { String path, List publications ->
             if (path && publications.size() > 1) throw new IllegalArgumentException("Multiple publications for project ${path} are not supported by the version guard")
         }
-        Map bom = ReleasePom.read(bomPom.get().asFile)
-        Map<String, String> managed = bom.management.collectEntries { ["${it.groupId}:${it.artifactId}".toString(), it.version] }
-        Map all = ReleasePom.read(allPom.get().asFile, bom.properties, managed)
-        [bom, all].each { Map parsed ->
+        // Static Maven candidates are optional: consumers without BOM/aggregate components plan
+        // only the registered Gradle candidates.
+        Map bom = bomPom.present ? ReleasePom.read(bomPom.get().asFile) : null
+        Map<String, String> managed = bom ? bom.management.collectEntries { ["${it.groupId}:${it.artifactId}".toString(), it.version] } : [:]
+        Map all = allPom.present ? ReleasePom.read(allPom.get().asFile, bom ? bom.properties : [:], managed) : null
+        [bom, all].findAll { it != null }.each { Map parsed ->
             String prefix = "${parsed.artifactId}-${parsed.version}"
             File inputPom = parsed.is(bom) ? bomPom.get().asFile : allPom.get().asFile
             if (!inputPom.canonicalPath.startsWith(root.canonicalPath + File.separator)) throw new IllegalArgumentException('Maven candidate POM must be inside the source repository')
