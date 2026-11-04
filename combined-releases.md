@@ -98,7 +98,10 @@ The plugin does not embed code or rewrite publication metadata: configure your s
 publication component so consumers have no dependency on the internal project. A remaining
 reference in the POM excludes the module during planning; a remaining reference in Gradle
 Module Metadata blocks bundling. A compile-only dependency omitted from both publications
-needs no metadata adjustment. Changing the opt-out list requires a new plan, even when
+needs no metadata adjustment. The planner does not traverse an opted-out project's own
+dependencies. If embedded code needs additional runtime libraries, either embed them too or
+declare them in the released module's POM and Gradle Module Metadata (when published).
+Changing the opt-out list requires a new plan, even when
 the source revision is unchanged. Kotlin uses
 `unpublishedProjectDependencies.set(listOf(":internalAnnotations", ":embeddedCode"))`.
 
@@ -119,7 +122,8 @@ the root build directory: `releaseAll/manifest.json`, `releaseAll/staging`,
 `releaseAll/bundle.zip`, `releaseAll/bundle-receipt.json`, and `releaseAll/deployment.json`.
 The existing shared properties override these conventions. Repository/Portal URLs and
 credentials use the shared conventions below. Configure module selection and opt-outs in
-the root build script; both lists are finalized after root configuration is complete.
+the root build script. Both lists are finalized after all projects are evaluated in default
+mode, or at the end of root-project evaluation with configure-on-demand.
 Keep planning and bundling in separate Gradle invocations.
 The manifest is tracked as a configuration-cache input when wiring the staging task graph.
 With `--configure-on-demand`, the plugin explicitly configures named modules and their
