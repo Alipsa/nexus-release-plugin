@@ -26,9 +26,8 @@ class NexusReleasePlugin implements Plugin<Project> {
 
     void apply(Project project) {
         def taskContainer = project.tasks
-        def objects = project.objects
         Function<NexusReleasePluginExtension, CombinedReleaseExtension> registrar = { NexusReleasePluginExtension parent ->
-            CombinedReleaseRegistrar.register(taskContainer, objects, parent)
+            CombinedReleaseRegistrar.register(project, parent)
         } as Function<NexusReleasePluginExtension, CombinedReleaseExtension>
         def extension = project.extensions.create('nexusReleasePlugin', NexusReleasePluginExtension, registrar)
         project.pluginManager.apply('signing')

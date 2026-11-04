@@ -26,18 +26,144 @@ Matrix provides the complete orchestration, prerequisites and command examples i
 During development it resolves this checkout through a Gradle composite build; publishing
 this plugin is a separate operation.
 
+## Select Gradle modules (2.5.0+)
+
+In the root build, list the project paths whose publications you want to consider:
+
+```groovy
+plugins { id 'se.alipsa.nexus-release-plugin' version '2.5.0' }
+
+nexusReleasePlugin {
+    userName = providers.gradleProperty('sonatypeUsername')
+    password = providers.gradleProperty('sonatypePassword')
+    combinedRelease {
+        modules = [':core', ':api'] // 'core' is also accepted; nested paths use ':tools:cli'
+        portalFixture = layout.projectDirectory.file('gradle/central-portal-fixture.json')
+    }
+}
+```
+
+Each named project must configure `maven-publish` and a Maven publication. A single Maven
+publication is selected automatically. For multiple publications, explicitly choose one with
+that project's `nexusReleasePlugin.mavenPublication`; ambiguity fails with an explanation.
+Coordinates and artifact names come from that publication, including custom artifact IDs.
+Publication inspection is deferred until combined-release tasks are configured. Normal JAR
+publications must include sources and Javadoc JARs, for example using
+`java { withSourcesJar(); withJavadocJar() }` before `from components.java`. POM-only
+publications are supported. Gradle's metadata redirection marker in the generated POM
+determines whether Module Metadata is included with its signature; no internal publication
+component API is used. Metadata-enabled, disabled, and POM-only publications are tested on
+Gradle 8.13 and 9.8.1.
+
+Configure Gradle signing credentials in each selected module using the usual signing
+properties or `signing { useInMemoryPgpKeys(...) }`. When combined staging is scheduled, the
+plugin applies `signing` and adds publication signing if needed. Setting `modules` does not
+add signing to ordinary `publishToMavenLocal` or snapshot publishing invocations. Signing
+explicitly configured by the consumer retains its existing requirements. Credentials and the confirmed Portal fixture remain
+release prerequisites; the fixture format and availability policy are described below.
+
+```sh
+./gradlew releaseAllPlan  # Generate publication POMs and inspect eligibility; no compilation or signing
+./gradlew bundleAll       # Check, sign, stage, and bundle the saved selection
+./gradlew releaseAll      # Recheck/build the bundle as needed, then upload one deployment
+```
+
+Review `build/releaseAll/manifest.json` and the printed SELECT/SKIP report before bundling.
+Only eligible named modules are staged and included. Already-published and SNAPSHOT versions
+are excluded. Dependencies on omitted modules must already be published at their exact
+configured coordinates; dependencies in a different namespace and `compileOnly` project
+dependencies are checked too. Tests and system dependencies do not affect eligibility.
+An internal project dependency without a Maven publication, or with ambiguous publications,
+excludes the dependent candidate during planning with its project path and configuration in
+the reason, before attempting to generate its POM. These release checks do not run in ordinary
+`help`, compilation, or local publication builds; Gradle's own publication validation still applies.
+
+All production project edges, including `compileOnly` and `compileOnlyApi`, are checked by
+default. For internal projects whose code is embedded in the artifact or needed only during
+compilation, explicitly opt out of the unpublished-project check:
+
+```groovy
+nexusReleasePlugin {
+    combinedRelease {
+        modules = [':api']
+        unpublishedProjectDependencies = [':internalAnnotations', ':embeddedCode']
+    }
+}
+```
+
+This list defaults to empty and applies only to targets without a Maven publication. It
+does not bypass checks for published siblings or ambiguous publications. Entries accept
+the same project-path syntax as `modules`, and unknown paths fail release configuration.
+The plugin does not embed code or rewrite publication metadata: configure your shading or
+publication component so consumers have no dependency on the internal project. A remaining
+reference in the POM excludes the module during planning; a remaining reference in Gradle
+Module Metadata blocks bundling. A compile-only dependency omitted from both publications
+needs no metadata adjustment. The planner does not traverse an opted-out project's own
+dependencies. If embedded code needs additional runtime libraries, either embed them too or
+declare them in the released module's POM and Gradle Module Metadata (when published).
+Changing the opt-out list requires a new plan, even when
+the source revision is unchanged. Kotlin uses
+`unpublishedProjectDependencies.set(listOf(":internalAnnotations", ":embeddedCode"))`.
+
+Ordinary project dependencies may still build an omitted sibling's JAR for compilation;
+that sibling's publication is not signed, staged, or bundled. Changing the named subset
+requires a new plan. The source repository must remain clean and committed, with generated
+build outputs ignored by Git.
+
+The plugin wires source and signing checks before preparation, the selected modules' `check`
+tasks when available, publication signing, and publishing to a local file repository. It uses
+neither Maven local nor an external staging service. `combinedReleaseStaging` is a reserved
+repository name in selected modules. No BOM, aggregate POM, candidate JSON, or custom staging
+script is required. Do not run `releaseAllPrepareMaven` for a Gradle-only release; it does no
+work when the plan contains no selected static Maven components.
+
+Defaults in module mode are the root project as `sourceDirectory` and these paths under
+the root build directory: `releaseAll/manifest.json`, `releaseAll/staging`,
+`releaseAll/bundle.zip`, `releaseAll/bundle-receipt.json`, and `releaseAll/deployment.json`.
+The existing shared properties override these conventions. Repository/Portal URLs and
+credentials use the shared conventions below. Configure module selection and opt-outs in
+the root build script. Both lists are finalized after all projects are evaluated in default
+mode, or at the end of root-project evaluation with configure-on-demand.
+Keep planning and bundling in separate Gradle invocations.
+The manifest is tracked as a configuration-cache input when wiring the staging task graph.
+With `--configure-on-demand`, the plugin explicitly configures named modules and their
+production project dependencies during root evaluation, before inspecting publications.
+This mode checks `resumeId` early and may configure those projects for non-release invocations;
+status-only recovery skips that work. Default configuration keeps `releaseAll` lazy until
+needed. Use qualified root task
+paths (`:releaseAllPlan`, `:bundleAll`, `:releaseAll`) to avoid Gradle's recursive search for
+unqualified task selectors configuring unrelated projects. Planning and bundling with
+configure-on-demand and strict configuration-cache reuse are tested on both supported
+Gradle versions.
+With `releaseAll.resumeId` set, module preparation is skipped and only the saved deployment
+is resumed; the default deployment record is still `build/releaseAll/deployment.json`.
+
+Kotlin builds use the same typed list property:
+
+```kotlin
+nexusReleasePlugin {
+    combinedRelease {
+        modules.set(listOf(":core", ":api"))
+        portalFixture.set(layout.projectDirectory.file("gradle/central-portal-fixture.json"))
+    }
+}
+```
+
+The remaining sections describe the advanced task API. Leaving `modules` empty preserves
+explicit configuration and caller-managed orchestration for mixed Gradle/Maven builds.
+
 ## Task contract
 
-All file locations are configured explicitly through shared extension or typed task properties.
+Without module selection, file locations are configured explicitly through shared extension or typed task properties.
 Credentials can inherit from the parent extension; no paths have defaults.
 The source repository must be clean and committed. Generated files belong in ignored outputs.
 
 | Task | Inputs and behavior |
 | --- | --- |
-| `releaseAllPlan` | `sourceDirectory`, `configuredRevision`, `candidatesJson`, generated `candidatePoms`, static `bomPom`/`allPom`, `repositoryUrl`, `portalUrl`, `userName`, `password`, `portalFixture`; writes `manifestFile` and optional `reportFile`. Never invokes Maven or resolves Maven candidates. |
+| `releaseAllPlan` | `sourceDirectory`, `configuredRevision`, `candidatesJson`, generated `candidatePoms`, independently optional static `bomPom` and `allPom` (configure either, both, or neither), `repositoryUrl`, `portalUrl`, `userName`, `password`, `portalFixture`; writes `manifestFile` and optional `reportFile`. Never invokes Maven or resolves Maven candidates. |
 | `releaseAllSigningCheck` | `manifestFile`, `configuredSigningJson` mapping project paths to signatory availability, `strict`; reports unavailable Gradle signing or fails when strict. No signing operation. |
 | `releaseAllGuard` | `sourceDirectory`, `manifestFile`, `versionsJson`; checks revision, clean tree, publication-POM hashes and Git index flags and effective publication versions before staging tasks run. |
-| `releaseAllPrepareMaven` | `sourceDirectory`, `manifestFile`, `stagingDirectory`, separate `localRepository`, `mavenWorkDirectory`, `verifierFile`, `settingsHelperFile`, `stagingRepositoryId` (default `release-staging`), optional `userSettingsFile` (default `~/.m2/settings.xml`); runs the caller's verifier and Maven `install -Prelease`, never deploy. The settings helper takes source user-settings, staged repository, output-settings and repository ID; it must preserve signing settings without logging secrets. |
+| `releaseAllPrepareMaven` | `sourceDirectory`, `manifestFile`; returns after source validation when no static Maven component is selected. Otherwise requires `stagingDirectory`, separate `localRepository`, `mavenWorkDirectory`, `verifierFile`, `settingsHelperFile`, `stagingRepositoryId` (default `release-staging`), optional `userSettingsFile` (default `~/.m2/settings.xml`); runs the caller's verifier and Maven `install -Prelease`, never deploy. The settings helper takes source user-settings, staged repository, output-settings and repository ID; it must preserve signing settings without logging secrets. |
 | `bundleAll` | `sourceDirectory`, `manifestFile`, `stagingDirectory`; writes `bundleFile` and `receiptFile`. Rechecks source, dependency POMs, metadata, artifact policy, nonempty signature files and staged checksums (signature cryptography is not verified). Generates MD5/SHA-1 for artifacts/signatures. |
 | `releaseAll` | `sourceDirectory`, `manifestFile`, `bundleFile`, `receiptFile`, `recordFile`, `portalFixture`, repository/Portal URLs and credentials; `resumeId` defaults to an empty string for a new upload, or a saved deployment ID for status-only recovery. Rechecks availability and uploads once. |
 
@@ -84,7 +210,7 @@ inherits parent `nexusUrl`. Unconfigured credentials remain unset. `repositoryUr
 to `https://repo.maven.apache.org/maven2`; it does not inherit `metadataBaseUrl`, because
 metadata lookup and exact-publication availability probes are separate endpoints and a
 proxy for one may not support the other. Configure both explicitly when using a shared proxy.
-All shared paths remain unset until configured.
+Shared paths remain unset until configured or module-mode conventions are applied.
 
 | Shared property | Tasks receiving its convention |
 | --- | --- |
@@ -94,6 +220,7 @@ All shared paths remain unset until configured.
 | `bundleFile`, `receiptFile` | `bundleAll`, `releaseAll` |
 | `recordFile` | `releaseAll` |
 | `repositoryUrl`, `portalUrl`, `userName`, `password` | `releaseAllPlan`, `releaseAll` |
+| `portalFixture` | `releaseAllPlan`, `releaseAll` |
 
 Inside the block, read-only typed task providers are `planTask`, `signingCheckTask`,
 `guardTask`, `prepareMavenTask`, `bundleAllTask` and `releaseAllTask`. They support
@@ -144,8 +271,11 @@ release; migrate composite-build consumers before using this checkout.
 Publication descriptors preserve exact configured coordinates, expected filenames, source
 project/publication or Maven POM, dependency origins, and published dependency/management
 expectations. Include production compile and runtime project edges even if omitted by POMs.
-Eligibility edges include candidate group/artifact pairs and groups covered by the optional
-`releaseAllPlan.releaseNamespaces` list (exact namespaces and their subgroups). Third-party
+Eligibility edges include candidate group/artifact pairs, all candidate group IDs and their
+subgroups, production project edges, and groups covered by the optional
+`releaseAllPlan.releaseNamespaces` list (exact namespaces and their subgroups). This always
+checks dependencies on omitted siblings within candidate namespaces, even when the explicit
+namespace list is empty. Third-party
 dependencies remain in POM expectations but are not availability probes; test/system edges
 are also excluded from eligibility. Candidate JSON requires a nonempty `files` list; omitted
 `dependencies` defaults to an empty list.

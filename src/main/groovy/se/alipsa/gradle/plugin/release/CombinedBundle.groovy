@@ -1,5 +1,6 @@
 package se.alipsa.gradle.plugin.release
 
+import groovy.json.JsonSlurper
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
@@ -44,6 +45,19 @@ class CombinedBundle {
             }
             File pomFile = new File(staging, "${coordinate.path()}/${prefix}.pom")
             ReleasePom.compare(pomFile, publication)
+            if (publication.unpublishedProjectDependencies) {
+                publication.files.findAll { it.endsWith('.module') }.each { String name ->
+                    Map module = new JsonSlurper().parse(new File(staging, "${coordinate.path()}/${name}")) as Map
+                    List<Map> references = (module.variants ?: []).collectMany { variant ->
+                        (variant.dependencies ?: []) + (variant.dependencyConstraints ?: []) + (variant['available-at'] ? [variant['available-at']] : [])
+                    }
+                    publication.unpublishedProjectDependencies.each { Map internal ->
+                        if (references.any { it.group == internal.groupId && it.module == internal.artifactId }) {
+                            throw new IllegalArgumentException("Unpublished project dependency '${internal.projectPath}' is still referenced by Gradle Module Metadata; remove that dependency from the publication before opting out")
+                        }
+                    }
+                }
+            }
             List<String> metadataErrors = []
             BundleValidator.validatePomMetadata(pomFile.getText('UTF-8'), coordinate.key(), metadataErrors)
             if (!metadataErrors.empty) throw new IllegalArgumentException(metadataErrors.join('; '))

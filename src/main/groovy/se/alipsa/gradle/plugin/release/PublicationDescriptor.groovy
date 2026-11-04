@@ -12,6 +12,7 @@ class PublicationDescriptor implements Serializable {
     List<Map<String, String>> dependencies = []
     List<Map<String, String>> publishedDependencies = []
     List<Map<String, String>> publishedManagement = []
+    List<Map<String, String>> unpublishedProjectDependencies = []
     List<String> files = []
     List<String> reasons = []
 
@@ -19,6 +20,7 @@ class PublicationDescriptor implements Serializable {
     Map<String, Serializable> toMap() {
         [projectPath: projectPath, publication: publication, pomFile: pomFile, packaging: packaging, role: role, sourcesAndJavadocRequired: sourcesAndJavadocRequired,
          groupId: coordinate.groupId, artifactId: coordinate.artifactId, version: coordinate.version,
-         dependencies: dependencies, publishedDependencies: publishedDependencies, publishedManagement: publishedManagement, files: files, reasons: reasons]
+         dependencies: dependencies, publishedDependencies: publishedDependencies, publishedManagement: publishedManagement,
+         unpublishedProjectDependencies: unpublishedProjectDependencies, files: files, reasons: reasons]
     }
 }

@@ -1,5 +1,34 @@
 # Release history
 
+## Ver 2.5.0, unreleased
+- Add `combinedRelease { modules = [':core', ':api'] }` to combine existing Gradle Maven
+  publications without candidate JSON or custom staging code. Derive coordinates, artifact
+  filenames, generated POMs, and production project dependencies from the named modules.
+- Provide default combined output paths and wire source/signing guards, selected modules'
+  checks, signing, local staging, bundling, and upload. Planning remains a separate invocation;
+  resuming a deployment does not build, sign, or plan again.
+- Make static BOM and aggregate POMs independently optional. Gradle-only releases do not
+  need `releaseAllPrepareMaven`; invoking it without selected Maven components is a no-op
+  that requires no Maven helper scripts or tools.
+- Fix subset dependency checks: candidate namespaces are always checked, and explicit
+  production project edges remain checked across namespaces even when the sibling is omitted.
+- Cover real multi-module subsets, omitted published/unpublished dependencies, optional
+  static POMs, signing and ZIP contents, stale module selections, and configuration-cache reuse.
+- Close the optional-POM test's ZIP archive after inspecting it.
+- Keep automatic signing confined to combined staging so ordinary local/snapshot publishing
+  does not require signing keys. Preserve consumer-configured signing requirements.
+- Inspect publication details lazily for combined-release tasks; unpublished or ambiguous
+  internal project dependencies become plan exclusions instead of breaking ordinary builds.
+- Detect Gradle Module Metadata through the generated POM's public redirection marker,
+  with enabled, disabled, and POM-only publication coverage on Gradle 8.13 and 9.8.1.
+- Add the explicit `unpublishedProjectDependencies` list for embedded or compile-only
+  internal projects without Maven publications. Preserve strict defaults and reject
+  remaining consumer references in POMs or Gradle Module Metadata. Changed opt-outs require
+  a new plan even at the same source revision.
+- Support configure-on-demand by configuring selected modules and production project
+  dependencies before publication inspection; test qualified root task paths and cache reuse.
+- Defer the resume-ID lookup in default configuration so `help` keeps `releaseAll` unrealized.
+
 ## Ver 2.4.0, 2026-10-11
 - Consolidate combined releases into `se.alipsa.nexus-release-plugin`, enabled by
   `nexusReleasePlugin { combinedRelease { } }`, with shared path, credential and endpoint conventions.

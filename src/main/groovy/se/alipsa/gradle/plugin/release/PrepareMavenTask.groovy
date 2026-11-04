@@ -15,13 +15,19 @@ abstract class PrepareMavenTask extends DefaultTask {
     @Internal abstract DirectoryProperty getStagingDirectory()
     @Internal abstract DirectoryProperty getLocalRepository()
     @Internal abstract DirectoryProperty getMavenWorkDirectory()
-    @InputFile @PathSensitive(PathSensitivity.RELATIVE) abstract RegularFileProperty getVerifierFile()
-    @InputFile @PathSensitive(PathSensitivity.RELATIVE) abstract RegularFileProperty getSettingsHelperFile()
+    @InputFile @Optional @PathSensitive(PathSensitivity.RELATIVE) abstract RegularFileProperty getVerifierFile()
+    @InputFile @Optional @PathSensitive(PathSensitivity.RELATIVE) abstract RegularFileProperty getSettingsHelperFile()
     @Internal abstract RegularFileProperty getUserSettingsFile()
 
     /** Runs only install, never deploy; validates flattened dependencies before staging. */
     @TaskAction
     void prepare() {
+        Map manifest = ReleaseManifest.read(manifestFile.get().asFile)
+        ReleaseManifest.guard(sourceDirectory.get().asFile, manifest)
+        if (!manifest.selected.any { !it.projectPath }) return
+        if (!verifierFile.present || !settingsHelperFile.present) {
+            throw new IllegalStateException('Static Maven publications require verifierFile and settingsHelperFile')
+        }
         if (System.getProperty('os.name').toLowerCase(Locale.ROOT).contains('windows')) {
             throw new IllegalStateException('Maven preparation requires a POSIX environment with bash, groovy and mvn; use WSL on Windows')
         }
@@ -29,8 +35,6 @@ abstract class PrepareMavenTask extends DefaultTask {
         if (!java.nio.file.Files.getFileStore(root.toPath()).supportsFileAttributeView('posix')) {
             throw new IllegalStateException('Maven preparation requires a POSIX filesystem for private signing settings')
         }
-        Map manifest = ReleaseManifest.read(manifestFile.get().asFile)
-        ReleaseManifest.guard(root, manifest)
         File stage = stagingDirectory.get().asFile
         File cache = localRepository.get().asFile
         cache.parentFile.mkdirs()
@@ -39,8 +43,6 @@ abstract class PrepareMavenTask extends DefaultTask {
         File original = userSettingsFile.present ? userSettingsFile.get().asFile : new File(System.getProperty('user.home'), '.m2/settings.xml')
         try {
             run(root, ['groovy', settingsHelperFile.get().asFile.path, original.path, stage.path, settingsFile.path, stagingRepositoryId.get()], logger)
-            boolean mavenSelected = manifest.selected.any { !it.projectPath }
-            if (!mavenSelected) return
             // Run existing verifier against staged artifacts, without publishing or cleaning staging.
             run(root, ['bash', verifierFile.get().asFile.path, '--manifest', manifestFile.get().asFile.path, '--staging', stage.path, '--local', cache.path], logger)
             manifest.selected.findAll { !it.projectPath }.sort { it.role == 'bom' ? 0 : 1 }.each { Map component ->

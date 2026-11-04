@@ -114,6 +114,83 @@ releaseAllPrepareMaven {
         } finally { server.stop(0) }
     }
 
+    @Test void planningWithoutStaticPomsSelectsRegisteredCandidatesOnly() {
+        HttpServer server = HttpServer.create(new InetSocketAddress('127.0.0.1', 0), 0)
+        server.createContext('/') { exchange ->
+            boolean portal = exchange.requestURI.path.contains('/publisher/published')
+            byte[] body = (portal ? '{"published":false}' : '').getBytes('UTF-8')
+            exchange.sendResponseHeaders(portal ? 200 : 404, body.length)
+            exchange.responseBody.withCloseable { it.write(body) }
+        }
+        server.start()
+        try {
+            String base = "http://127.0.0.1:${server.address.port}"
+            new File(root, 'settings.gradle').text = "rootProject.name='no-static-fixture'"
+            new File(root, '.gitignore').text = 'build/\n.gradle/\n'
+            new File(root, 'fixture.json').text = '{"namespacePolicy":"groupId","published":{"body":{"published":true}},"absent":{"body":{"published":false}}}'
+            ['platform', 'slim'].each { name ->
+                String packaging = name == 'platform' ? 'pom' : 'jar'
+                String xml = """<project><groupId>g</groupId><artifactId>${name}</artifactId><version>1</version><packaging>${packaging}</packaging><name>Test</name><description>Test</description><url>https://example.org</url><licenses><license><name>MIT</name><url>https://example.org</url></license></licenses><developers><developer><name>Test</name></developer></developers><scm><url>https://example.org</url><connection>scm:git:example</connection></scm></project>"""
+                new File(root, name + '.xml').text = xml
+                File staged = new File(root, "build/staging/g/${name}/1"); staged.mkdirs()
+                new File(staged, "${name}-1.pom").text = xml
+                new File(staged, "${name}-1.pom.asc").text = 'signature'
+                if (packaging == 'jar') {
+                    new File(staged, "${name}-1.jar").text = 'jar'
+                    new File(staged, "${name}-1.jar.asc").text = 'signature'
+                }
+            }
+            new File(root, 'build.gradle').text = """
+plugins { id 'se.alipsa.nexus-release-plugin' }
+nexusReleasePlugin {
+  combinedRelease {
+    sourceDirectory = layout.projectDirectory
+    manifestFile = layout.buildDirectory.file('manifest.json')
+    stagingDirectory = layout.buildDirectory.dir('staging')
+    bundleFile = layout.buildDirectory.file('bundle.zip')
+    receiptFile = layout.buildDirectory.file('receipt.json')
+  }
+}
+releaseAllPlan {
+  configuredRevision = providers.exec { commandLine 'git', 'rev-parse', 'HEAD' }.standardOutput.asText.get().trim()
+  candidatesJson = '[{"projectPath":":platform","publication":"maven","pomFile":"platform.xml","groupId":"g","artifactId":"platform","version":"1","files":["platform-1.pom"]},{"projectPath":":slim","publication":"maven","pomFile":"slim.xml","groupId":"g","artifactId":"slim","version":"1","sourcesAndJavadocRequired":false,"files":["slim-1.pom","slim-1.jar"]}]'
+  portalFixture = layout.projectDirectory.file('fixture.json')
+  repositoryUrl = '${base}/repo'
+  portalUrl = '${base}/api/v1'
+  userName = 'u'; password = 'p'
+}
+releaseAllSigningCheck {
+  configuredSigningJson = '{}'; strict = false
+}
+"""
+            MatrixRunner.instrument(root)
+            ReleaseManifest.git(root, 'init'); ReleaseManifest.git(root, 'add', '.')
+            ReleaseManifest.git(root, '-c', 'user.name=Test', '-c', 'user.email=test@example.org', 'commit', '-m', 'Fixture')
+            run('releaseAllPlan')
+            Map planned = ReleaseManifest.read(new File(root, 'build/manifest.json'))
+            assertEquals(2, planned.selected.size())
+            assertEquals([], planned.excluded)
+            assertEquals(['platform.xml', 'slim.xml'], planned.selected*.pomFile)
+            assertEquals([':platform', ':slim'], planned.verificationScope)
+            assertEquals(2, planned.hashes.size())
+            assertTrue(run('releaseAllPlan').output.contains('Reusing configuration cache'))
+            run('releaseAllSigningCheck')
+            run('bundleAll')
+            assertTrue(new File(root, 'build/bundle.zip').isFile())
+            Set<String> entries = new java.util.zip.ZipFile(new File(root, 'build/bundle.zip')).withCloseable { zip ->
+                zip.entries().collect { it.name } as Set
+            }
+            assertEquals([
+                'g/platform/1/platform-1.pom', 'g/platform/1/platform-1.pom.md5', 'g/platform/1/platform-1.pom.sha1',
+                'g/platform/1/platform-1.pom.asc', 'g/platform/1/platform-1.pom.asc.md5', 'g/platform/1/platform-1.pom.asc.sha1',
+                'g/slim/1/slim-1.pom', 'g/slim/1/slim-1.pom.md5', 'g/slim/1/slim-1.pom.sha1',
+                'g/slim/1/slim-1.pom.asc', 'g/slim/1/slim-1.pom.asc.md5', 'g/slim/1/slim-1.pom.asc.sha1',
+                'g/slim/1/slim-1.jar', 'g/slim/1/slim-1.jar.md5', 'g/slim/1/slim-1.jar.sha1',
+                'g/slim/1/slim-1.jar.asc', 'g/slim/1/slim-1.jar.asc.md5', 'g/slim/1/slim-1.jar.asc.sha1'
+            ] as Set, entries)
+        } finally { server.stop(0) }
+    }
+
     @Test void resumeUsesHeadForRepositoryArtifacts() {
         List<String> methods = Collections.synchronizedList([])
         HttpServer server = HttpServer.create(new InetSocketAddress('127.0.0.1', 0), 0)
