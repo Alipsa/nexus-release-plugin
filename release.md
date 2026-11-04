@@ -1,6 +1,6 @@
 # Release history
 
-## Ver 2.5.0, unreleased
+## Ver 2.5.0, 2026-11-05
 - Add `combinedRelease { modules = [':core', ':api'] }` to combine existing Gradle Maven
   publications without candidate JSON or custom staging code. Derive coordinates, artifact
   filenames, generated POMs, and production project dependencies from the named modules.
