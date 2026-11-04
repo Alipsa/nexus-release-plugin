@@ -13,6 +13,7 @@ import org.gradle.api.provider.ListProperty
 @PackageScope
 final class CombinedReleaseProperties {
     final ListProperty<String> modules
+    final ListProperty<String> unpublishedProjectDependencies
     final RegularFileProperty portalFixture
     final DirectoryProperty sourceDirectory
     final RegularFileProperty manifestFile
@@ -27,6 +28,7 @@ final class CombinedReleaseProperties {
 
     CombinedReleaseProperties(ObjectFactory objects, NexusReleasePluginExtension parent) {
         modules = objects.listProperty(String).convention([])
+        unpublishedProjectDependencies = objects.listProperty(String).convention([])
         portalFixture = objects.fileProperty()
         sourceDirectory = objects.directoryProperty()
         manifestFile = objects.fileProperty()

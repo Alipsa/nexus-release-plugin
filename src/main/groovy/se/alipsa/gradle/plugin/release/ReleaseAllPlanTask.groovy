@@ -15,6 +15,7 @@ abstract class ReleaseAllPlanTask extends DefaultTask {
     @Input abstract Property<String> getConfiguredRevision()
     @Input abstract org.gradle.api.provider.ListProperty<String> getReleaseNamespaces()
     @Input abstract org.gradle.api.provider.ListProperty<String> getModulePaths()
+    @Input abstract org.gradle.api.provider.ListProperty<String> getUnpublishedProjectPaths()
     @Internal abstract DirectoryProperty getSourceDirectory()
     @InputFile @Optional @PathSensitive(PathSensitivity.RELATIVE) abstract RegularFileProperty getBomPom()
     @InputFile @Optional @PathSensitive(PathSensitivity.RELATIVE) abstract RegularFileProperty getAllPom()
@@ -29,6 +30,7 @@ abstract class ReleaseAllPlanTask extends DefaultTask {
 
     ReleaseAllPlanTask() {
         modulePaths.convention([])
+        unpublishedProjectPaths.convention([])
         outputs.upToDateWhen { false }
     }
 
@@ -51,6 +53,13 @@ abstract class ReleaseAllPlanTask extends DefaultTask {
             Map parsed = inspectPom ? ReleasePom.read(candidatePom) : [packaging: 'jar', dependencies: [], management: []]
             if (inspectPom) inspectedPoms.add(registered.pomFile)
             List<String> files = new ArrayList<String>(registered.files)
+            List<Map> unpublished = registered.unpublishedProjectDependencies ?: []
+            List<String> reasons = new ArrayList<String>(registered.exclusionReasons ?: [])
+            unpublished.each { Map internal ->
+                if ((parsed.dependencies + parsed.management).any { it.groupId == internal.groupId && it.artifactId == internal.artifactId }) {
+                    reasons.add("Unpublished project dependency '${internal.projectPath}' is still referenced by the published POM; remove that dependency from the publication before opting out".toString())
+                }
+            }
             // Gradle advertises module metadata in the generated POM using this public
             // redirection marker. This avoids consulting internal MavenPublication components.
             if (inspectPom && registered.detectModuleMetadata && candidatePom.getText('UTF-8').contains('<!-- do_not_remove: published-with-gradle-metadata -->')) {
@@ -63,7 +72,7 @@ abstract class ReleaseAllPlanTask extends DefaultTask {
                 sourcesAndJavadocRequired: registered.sourcesAndJavadocRequired != false,
                 dependencies: (registered.dependencies ?: []) + (parsed.dependencies + parsed.management),
                 publishedDependencies: parsed.dependencies, publishedManagement: parsed.management, files: files,
-                reasons: new ArrayList<String>(registered.exclusionReasons ?: []))
+                unpublishedProjectDependencies: unpublished, reasons: reasons)
             candidates.add(publication)
         }
         candidates.groupBy { it.projectPath }.each { String path, List publications ->
@@ -117,6 +126,7 @@ abstract class ReleaseAllPlanTask extends DefaultTask {
             hashes[path] = ReleaseChecksums.checksum(input, 'SHA-256')
         }
         Map manifest = [schemaVersion: 1, revision: configuredRevision.get(), hashes: hashes, modulePaths: modulePaths.get(),
+            unpublishedProjectPaths: unpublishedProjectPaths.get(),
             versions: candidates.findAll { it.projectPath }.collectEntries { [it.projectPath, it.coordinate.version] },
             selected: selected.collect { it.toMap() }, excluded: candidates.findAll { !it.reasons.empty }.collect { it.toMap() },
             verificationScope: scope.sort(), warnings: warnings, created: java.time.Instant.now().toString()]

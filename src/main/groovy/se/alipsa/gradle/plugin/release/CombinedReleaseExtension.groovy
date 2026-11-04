@@ -32,6 +32,8 @@ class CombinedReleaseExtension {
 
     /** Project paths whose Maven publications should be considered for one combined release. */
     ListProperty<String> getModules() { shared.modules }
+    /** Internal projects embedded in the artifact or needed only while compiling it. */
+    ListProperty<String> getUnpublishedProjectDependencies() { shared.unpublishedProjectDependencies }
     RegularFileProperty getPortalFixture() { shared.portalFixture }
     DirectoryProperty getSourceDirectory() { shared.sourceDirectory }
     RegularFileProperty getManifestFile() { shared.manifestFile }

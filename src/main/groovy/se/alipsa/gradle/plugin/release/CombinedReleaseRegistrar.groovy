@@ -61,8 +61,16 @@ final class CombinedReleaseRegistrar {
         }
         def providers = new CombinedReleaseTasks(planTask, signingCheckTask, guardTask, prepareMavenTask, bundleAllTask, releaseAllTask)
         CombinedReleaseExtension extension = objects.newInstance(CombinedReleaseExtension, shared, providers)
-        project.gradle.projectsEvaluated {
-            ModuleReleaseConfigurer.configure(project, extension)
+        if (project.gradle.startParameter.configureOnDemand) {
+            // With on-demand configuration, projectsEvaluated fires after task dependencies
+            // have been collected. Wire the graph at the end of the owning build script.
+            project.afterEvaluate {
+                ModuleReleaseConfigurer.configure(project, extension)
+            }
+        } else {
+            project.gradle.projectsEvaluated {
+                ModuleReleaseConfigurer.configure(project, extension)
+            }
         }
         extension
     }

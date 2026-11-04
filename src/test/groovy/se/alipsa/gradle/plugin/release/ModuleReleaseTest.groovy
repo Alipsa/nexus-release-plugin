@@ -11,6 +11,111 @@ import static org.junit.jupiter.api.Assertions.*
 class ModuleReleaseTest {
     @TempDir File root
 
+    @Test void helpDoesNotRealizeReleaseAll() {
+        withServer { String base, List requests ->
+            fixture(base, "modules = [':api']", false, false)
+            new File(root, 'build.gradle') << "\ntasks.named('releaseAll').configure { throw new GradleException('Unexpected releaseAll realization') }\n"
+            run('help')
+            assertTrue(requests.empty)
+        }
+    }
+
+    @Test void configureOnDemandConfiguresOnlyTheSelectedModulesAndTheirDependencies() {
+        withServer(['example:core-artifact:1.0'] as Set) { String base, List requests ->
+            fixture(base, "modules = [':api']")
+            new File(root, 'unused/build.gradle').text = "throw new GradleException('Unrelated project was configured')"
+            commit()
+            run(':releaseAllPlan', '--configure-on-demand')
+            assertTrue(run(':releaseAllPlan', '--configure-on-demand').output.contains('Reusing configuration cache'))
+            assertEquals([':api'], ReleaseManifest.read(new File(root, 'build/releaseAll/manifest.json')).selected*.projectPath)
+            def bundle = run(':bundleAll', '--configure-on-demand')
+            assertNotNull(bundle.task(':api:signMavenPublication'))
+            assertNull(bundle.task(':core:signMavenPublication'))
+            assertTrue(run(':bundleAll', '--configure-on-demand').output.contains('Reusing configuration cache'))
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = [false, true])
+    void unpublishedCompileOnlyProjectsRequireAnExplicitOptOut(boolean optOut) {
+        withServer { String base, List requests ->
+            fixture(base, "modules = [':api']${optOut ? "; unpublishedProjectDependencies = ['core']" : ''}", true)
+            makeCoreInternal()
+            commit()
+            run('releaseAllPlan')
+            Map manifest = ReleaseManifest.read(new File(root, 'build/releaseAll/manifest.json'))
+            if (!optOut) {
+                assertEquals([], manifest.selected)
+                assertTrue(manifest.excluded.first().reasons.any { it.contains("Project dependency ':core' has no Maven publication") })
+                return
+            }
+            assertEquals([':api'], manifest.selected*.projectPath)
+            assertEquals([':core'], manifest.selected.first().unpublishedProjectDependencies*.projectPath)
+            assertEquals([':core'], manifest.unpublishedProjectPaths)
+            assertTrue(run('releaseAllPlan').output.contains('Reusing configuration cache'))
+            run('bundleAll')
+            assertTrue(run('bundleAll').output.contains('Reusing configuration cache'))
+            assertFalse(requests.any { it.contains('internal') })
+        }
+    }
+
+    @Test void optOutCannotHideAnUnpublishedDependencyInThePom() {
+        withServer { String base, List requests ->
+            fixture(base, "modules = [':api']; unpublishedProjectDependencies = [':core']")
+            makeCoreInternal()
+            commit()
+            run('releaseAllPlan')
+            Map manifest = ReleaseManifest.read(new File(root, 'build/releaseAll/manifest.json'))
+            assertEquals([], manifest.selected)
+            assertTrue(manifest.excluded.first().reasons.any { it.contains("Unpublished project dependency ':core' is still referenced by the published POM") })
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = [false, true])
+    void embeddedProjectsMustAlsoBeRemovedFromGradleMetadata(boolean disableMetadata) {
+        withServer { String base, List requests ->
+            fixture(base, "modules = [':api']; unpublishedProjectDependencies = [':core']")
+            makeCoreInternal()
+            new File(root, 'api/build.gradle') << '''
+tasks.named('jar') { from(project(':core').sourceSets.main.output) }
+publishing.publications.maven.pom.withXml {
+    asNode().dependencies.dependency.findAll {
+        it.groupId.text() == 'internal' && it.artifactId.text() == 'core'
+    }.each { it.parent().remove(it) }
+}
+'''
+            if (disableMetadata) new File(root, 'api/build.gradle') << '\ntasks.withType(org.gradle.api.publish.tasks.GenerateModuleMetadata).configureEach { enabled = false }\n'
+            commit()
+            run('releaseAllPlan')
+            assertEquals([':api'], ReleaseManifest.read(new File(root, 'build/releaseAll/manifest.json')).selected*.projectPath)
+            if (!disableMetadata) {
+                def failed = runner('bundleAll').buildAndFail()
+                assertTrue(failed.output.contains("Unpublished project dependency ':core' is still referenced by Gradle Module Metadata"))
+                assertFalse(new File(root, 'build/releaseAll/bundle.zip').exists())
+            } else {
+                run('bundleAll')
+                new ZipFile(new File(root, 'build/releaseAll/staging/example/api-artifact/1.0/api-artifact-1.0.jar')).withCloseable { jar ->
+                    assertNotNull(jar.getEntry('Core.class'))
+                    assertNotNull(jar.getEntry('Api.class'))
+                }
+                assertTrue(new File(root, 'build/releaseAll/bundle.zip').isFile())
+            }
+        }
+    }
+
+    @Test void changingOptOutsRequiresANewPlanEvenWithoutSourceChanges() {
+        withServer { String base, List requests ->
+            fixture(base, "modules = [':api']; unpublishedProjectDependencies = providers.gradleProperty('embedded').map { [it] }.orElse([])", true)
+            makeCoreInternal()
+            commit()
+            run('releaseAllPlan', '-Pembedded=core')
+            def failed = runner('bundleAll').buildAndFail()
+            assertTrue(failed.output.contains('Unpublished project dependency opt-outs changed; run releaseAllPlan again'))
+            assertNull(failed.task(':api:signMavenPublication'))
+        }
+    }
+
     @ParameterizedTest
     @ValueSource(strings = ['1.0-SNAPSHOT', '1.0'])
     void ordinaryLocalPublishingDoesNotRequireOrAddSigning(String version) {
@@ -42,6 +147,7 @@ class ModuleReleaseTest {
                 internal.text = "plugins { id 'java-library' }\ngroup = 'example'; version = '1.0'\n"
             } else {
                 internal << "\npublishing { publications { extra(MavenPublication) { artifactId = '${publications == 'conflicting' ? 'other-core-artifact' : 'core-artifact'}'; from components.java } } }\n"
+                new File(root, 'build.gradle') << "\nnexusReleasePlugin { combinedRelease { unpublishedProjectDependencies = [':core'] } }\n"
             }
             new File(root, 'build.gradle') << '''
 if (gradle.startParameter.taskNames == ['help']) {
@@ -155,7 +261,7 @@ if (gradle.startParameter.taskNames == ['help']) {
 
     @Test void omittedUnpublishedSiblingBlocksConsumerAcrossNamespacesAndCompileOnlyEdges() {
         withServer { String base, List requests ->
-            fixture(base, "modules = [':api']", true)
+            fixture(base, "modules = [':api']; unpublishedProjectDependencies = [':core']", true)
             run('releaseAllPlan')
             Map manifest = ReleaseManifest.read(new File(root, 'build/releaseAll/manifest.json'))
             assertEquals([], manifest.selected)
@@ -265,6 +371,7 @@ nexusReleasePlugin {
     userName.set("u"); password.set("p")
     combinedRelease {
         modules.set(listOf(":api", ":core"))
+        unpublishedProjectDependencies.set(emptyList())
         portalFixture.set(layout.projectDirectory.file("fixture.json"))
         repositoryUrl.set("${base}/repo")
         portalUrl.set("${base}/api/v1")
@@ -279,16 +386,26 @@ nexusReleasePlugin {
         }
     }
 
-    @Test void resumeOnlyUsesSavedDeploymentWithoutModulePreparation() {
+    @ParameterizedTest
+    @ValueSource(booleans = [false, true])
+    void resumeOnlyUsesSavedDeploymentWithoutModulePreparation(boolean configureOnDemand) {
         withServer(['example:api-artifact:1.0'] as Set) { String base, List requests ->
             fixture(base, "modules = [':missing']")
             new File(root, 'build.gradle') << "\nreleaseAll { resumeId = 'saved-id' }\n"
+            new File(root, 'build.gradle') << '\ntasks.all { }\n'
+            if (configureOnDemand) new File(root, 'unused/build.gradle').text = "throw new GradleException('Resume configured an unrelated project')"
             ReleaseManifest.write(new File(root, 'build/releaseAll/deployment.json'), [deploymentId: 'saved-id', state: 'UPLOADED',
                 manifest: [selected: [[groupId: 'example', artifactId: 'api-artifact', version: '1.0', files: ['api-artifact-1.0.pom']]]]])
-            def result = run('releaseAll')
+            String task = configureOnDemand ? ':releaseAll' : 'releaseAll'
+            String[] flags = configureOnDemand ? ['--configure-on-demand'] as String[] : new String[0]
+            def result = run(task, *flags)
             assertEquals([':releaseAll'], result.tasks*.path)
-            assertTrue(run('releaseAll').output.contains('Reusing configuration cache'))
+            assertTrue(run(task, *flags).output.contains('Reusing configuration cache'))
         }
+    }
+
+    private void makeCoreInternal() {
+        new File(root, 'core/build.gradle').text = "plugins { id 'java-library' }\ngroup = 'internal'; version = '1.0'\n"
     }
 
     private void fixture(String base, String selection, boolean compileOnly = false, boolean signingKeys = true) {
@@ -366,9 +483,9 @@ ${name == 'api' ? "dependencies { ${compileOnly ? 'compileOnly' : 'api'} project
         finally { server.stop(0) }
     }
 
-    private def run(String task) { runner(task).build() }
-    private def runner(String task) {
+    private def run(String task, String... flags) { runner(task, *flags).build() }
+    private def runner(String task, String... flags) {
         MatrixRunner.create().withProjectDir(root).withPluginClasspath()
-            .withArguments(task, '--configuration-cache', '--configuration-cache-problems=fail', '--stacktrace')
+            .withArguments([task, '--configuration-cache', '--configuration-cache-problems=fail', '--stacktrace'] + flags.toList())
     }
 }

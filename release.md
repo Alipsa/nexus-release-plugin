@@ -21,6 +21,13 @@
   internal project dependencies become plan exclusions instead of breaking ordinary builds.
 - Detect Gradle Module Metadata through the generated POM's public redirection marker,
   with enabled, disabled, and POM-only publication coverage on Gradle 8.13 and 9.8.1.
+- Add the explicit `unpublishedProjectDependencies` list for embedded or compile-only
+  internal projects without Maven publications. Preserve strict defaults and reject
+  remaining consumer references in POMs or Gradle Module Metadata. Changed opt-outs require
+  a new plan even at the same source revision.
+- Support configure-on-demand by configuring selected modules and production project
+  dependencies before publication inspection; test qualified root task paths and cache reuse.
+- Defer the resume-ID lookup in default configuration so `help` keeps `releaseAll` unrealized.
 
 ## Ver 2.4.0, 2026-10-11
 - Consolidate combined releases into `se.alipsa.nexus-release-plugin`, enabled by

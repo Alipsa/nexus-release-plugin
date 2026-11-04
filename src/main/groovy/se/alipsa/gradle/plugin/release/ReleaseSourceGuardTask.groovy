@@ -15,9 +15,11 @@ abstract class ReleaseSourceGuardTask extends DefaultTask {
     @Internal abstract DirectoryProperty getSourceDirectory()
     @Input abstract Property<String> getVersionsJson()
     @Input abstract org.gradle.api.provider.ListProperty<String> getModulePaths()
+    @Input abstract org.gradle.api.provider.ListProperty<String> getUnpublishedProjectPaths()
 
     ReleaseSourceGuardTask() {
         modulePaths.convention([])
+        unpublishedProjectPaths.convention([])
         outputs.upToDateWhen { false }
     }
 
@@ -27,6 +29,9 @@ abstract class ReleaseSourceGuardTask extends DefaultTask {
         Map manifest = ReleaseManifest.read(manifestFile.get().asFile)
         if (!modulePaths.get().empty && manifest.modulePaths != modulePaths.get()) {
             throw new IllegalStateException('Configured modules changed; run releaseAllPlan again before bundling')
+        }
+        if (!modulePaths.get().empty && (manifest.unpublishedProjectPaths ?: []) != unpublishedProjectPaths.get()) {
+            throw new IllegalStateException('Unpublished project dependency opt-outs changed; run releaseAllPlan again before bundling')
         }
         ReleaseManifest.guard(sourceDirectory.get().asFile, manifest, new JsonSlurper().parseText(versionsJson.get()) as Map<String, String>)
     }

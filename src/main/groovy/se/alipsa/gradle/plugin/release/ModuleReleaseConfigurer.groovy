@@ -23,25 +23,36 @@ final class ModuleReleaseConfigurer {
         if (project != project.rootProject) {
             throw new GradleException('Configure combinedRelease.modules in the root project')
         }
-        List<String> paths = requested.collect { String path ->
-            if (!path?.trim() || path != path.trim()) throw new GradleException('combinedRelease.modules requires nonempty project paths')
-            path.startsWith(':') ? path : ':' + path
-        }.unique().sort()
+        List<String> paths = normalizePaths(requested, 'modules')
+        extension.unpublishedProjectDependencies.finalizeValue()
+        List<String> unpublishedPaths = normalizePaths(extension.unpublishedProjectDependencies.get(), 'unpublishedProjectDependencies')
         extension.sourceDirectory.convention(project.layout.projectDirectory)
         extension.manifestFile.convention(project.layout.buildDirectory.file('releaseAll/manifest.json'))
         extension.stagingDirectory.convention(project.layout.buildDirectory.dir('releaseAll/staging'))
         extension.bundleFile.convention(project.layout.buildDirectory.file('releaseAll/bundle.zip'))
         extension.receiptFile.convention(project.layout.buildDirectory.file('releaseAll/bundle-receipt.json'))
         extension.recordFile.convention(project.layout.buildDirectory.file('releaseAll/deployment.json'))
-        if (extension.releaseAllTask.get().resumeId.getOrElse('')) return
+        // Under configure-on-demand, projects must be evaluated here, outside lazy task
+        // configuration actions: publishing plugins register afterEvaluate callbacks.
+        if (project.gradle.startParameter.configureOnDemand && !extension.releaseAllTask.get().resumeId.getOrElse('')) {
+            configureProjects(project, paths, [] as Set)
+        }
 
         // Configure publication details only when release tasks are realized. This closure is
         // consumed by configuration actions; tasks receive detached values, never Project models.
-        Closure model = { describe(project, extension, paths) }.memoize()
+        Closure model = {
+            // Only release-model consumers inspect resumeId, preserving lazy ordinary builds
+            // and status-only recovery even under eager consumer task rules.
+            if (extension.releaseAllTask.get().resumeId.getOrElse('')) {
+                return [candidatesJson: '[]', signingJson: '{}', versionsJson: '{}', pomTasks: []]
+            }
+            describe(project, extension, paths, unpublishedPaths)
+        }.memoize()
         extension.planTask.configure { task ->
             Map description = model.call()
             task.candidatesJson.convention(description.candidatesJson)
             task.modulePaths.set(paths)
+            task.unpublishedProjectPaths.set(unpublishedPaths)
             File source = extension.sourceDirectory.get().asFile
             task.configuredRevision.convention(project.providers.exec {
                 commandLine('git', '-C', source.absolutePath, 'rev-parse', 'HEAD')
@@ -56,6 +67,7 @@ final class ModuleReleaseConfigurer {
         extension.guardTask.configure { task ->
             task.versionsJson.convention(model.call().versionsJson)
             task.modulePaths.set(paths)
+            task.unpublishedProjectPaths.set(unpublishedPaths)
         }
 
         // Resolve only when bundling is scheduled, even if a consumer eagerly realizes tasks.
@@ -73,11 +85,39 @@ final class ModuleReleaseConfigurer {
         }
     }
 
-    private static Map describe(Project project, CombinedReleaseExtension extension, List<String> paths) {
+    private static List<String> normalizePaths(List<String> paths, String property) {
+        paths.collect { String path ->
+            if (!path?.trim() || path != path.trim()) throw new GradleException("combinedRelease.${property} requires nonempty project paths")
+            path.startsWith(':') ? path : ':' + path
+        }.unique().sort()
+    }
+
+    private static void configureProjects(Project root, List<String> paths, Set<String> visited) {
+        paths.each { String path ->
+            Project module = root.findProject(path)
+            if (module == null || !visited.add(path)) return
+            if (module != root) root.evaluationDependsOn(path)
+            List<String> dependencies = productionConfigurations(module).collectMany { configuration ->
+                configuration.allDependencies.withType(ProjectDependency).collect { it.path }
+            }
+            configureProjects(root, dependencies, visited)
+        }
+    }
+
+    private static List productionConfigurations(Project module) {
+        module.configurations.findAll { configuration ->
+            configuration.name in ['api', 'implementation', 'compileOnly', 'compileOnlyApi', 'runtime', 'runtimeOnly', 'compileClasspath', 'runtimeClasspath']
+        }.toList()
+    }
+
+    private static Map describe(Project project, CombinedReleaseExtension extension, List<String> paths, List<String> unpublishedPaths) {
         File source = extension.sourceDirectory.get().asFile
         List<Map> descriptors = []
         Map<String, Boolean> signing = [:]
         List pomTasks = []
+        unpublishedPaths.each { String path ->
+            if (project.findProject(path) == null) throw new GradleException("Unknown unpublished project dependency '${path}'")
+        }
         paths.each { String path ->
             Project module = project.findProject(path)
             if (module == null) throw new GradleException("Unknown combined release module '${path}'")
@@ -89,12 +129,13 @@ final class ModuleReleaseConfigurer {
                 throw new GradleException("Publication POM for ${path} must be inside combinedRelease.sourceDirectory")
             }
             String prefix = "${publication.artifactId}-${publication.version}"
-            Map projectDependencies = projectEdges(module)
+            Map projectDependencies = projectEdges(module, unpublishedPaths)
             Map descriptor = [projectPath: path, publication: publication.name,
                 groupId: publication.groupId, artifactId: publication.artifactId, version: publication.version,
                 pomFile: source.toPath().toAbsolutePath().normalize().relativize(pom.toPath().toAbsolutePath().normalize()).toString(),
                 files: ["${prefix}.pom".toString()], detectModuleMetadata: true,
                 dependencies: projectDependencies.edges, exclusionReasons: projectDependencies.reasons,
+                unpublishedProjectDependencies: projectDependencies.unpublished,
                 skipPomInspection: !projectDependencies.reasons.empty]
             publication.artifacts.each { artifact ->
                 String classifier = artifact.classifier ? '-' + artifact.classifier : ''
@@ -171,14 +212,17 @@ final class ModuleReleaseConfigurer {
         publications.first()
     }
 
-    private static Map projectEdges(Project module) {
+    private static Map projectEdges(Project module, List<String> unpublishedPaths) {
         List<Map> edges = []
         List<String> reasons = []
-        module.configurations.findAll { configuration ->
-            configuration.name in ['api', 'implementation', 'compileOnly', 'compileOnlyApi', 'runtime', 'runtimeOnly', 'compileClasspath', 'runtimeClasspath']
-        }.each { configuration ->
+        List<Map> unpublished = []
+        productionConfigurations(module).each { configuration ->
             configuration.allDependencies.withType(ProjectDependency).each { ProjectDependency dependency ->
                 Project target = module.rootProject.project(dependency.path)
+                if (target.path in unpublishedPaths && !target.extensions.findByType(PublishingExtension)?.publications?.withType(MavenPublication)?.size()) {
+                    unpublished.add([projectPath: target.path, groupId: target.group.toString(), artifactId: target.name])
+                    return
+                }
                 Map edge = [projectPath: target.path, scope: configuration.name.startsWith('runtime') ? 'runtime' : 'compile',
                     origin: "${module.path}:${configuration.name}".toString()]
                 try {
@@ -193,6 +237,6 @@ final class ModuleReleaseConfigurer {
                 edges.add(edge)
             }
         }
-        [edges: edges.unique(), reasons: reasons.unique()]
+        [edges: edges.unique(), reasons: reasons.unique(), unpublished: unpublished.unique()]
     }
 }

@@ -77,6 +77,31 @@ An internal project dependency without a Maven publication, or with ambiguous pu
 excludes the dependent candidate during planning with its project path and configuration in
 the reason, before attempting to generate its POM. These release checks do not run in ordinary
 `help`, compilation, or local publication builds; Gradle's own publication validation still applies.
+
+All production project edges, including `compileOnly` and `compileOnlyApi`, are checked by
+default. For internal projects whose code is embedded in the artifact or needed only during
+compilation, explicitly opt out of the unpublished-project check:
+
+```groovy
+nexusReleasePlugin {
+    combinedRelease {
+        modules = [':api']
+        unpublishedProjectDependencies = [':internalAnnotations', ':embeddedCode']
+    }
+}
+```
+
+This list defaults to empty and applies only to targets without a Maven publication. It
+does not bypass checks for published siblings or ambiguous publications. Entries accept
+the same project-path syntax as `modules`, and unknown paths fail release configuration.
+The plugin does not embed code or rewrite publication metadata: configure your shading or
+publication component so consumers have no dependency on the internal project. A remaining
+reference in the POM excludes the module during planning; a remaining reference in Gradle
+Module Metadata blocks bundling. A compile-only dependency omitted from both publications
+needs no metadata adjustment. Changing the opt-out list requires a new plan, even when
+the source revision is unchanged. Kotlin uses
+`unpublishedProjectDependencies.set(listOf(":internalAnnotations", ":embeddedCode"))`.
+
 Ordinary project dependencies may still build an omitted sibling's JAR for compilation;
 that sibling's publication is not signed, staged, or bundled. Changing the named subset
 requires a new plan. The source repository must remain clean and committed, with generated
@@ -93,9 +118,19 @@ Defaults in module mode are the root project as `sourceDirectory` and these path
 the root build directory: `releaseAll/manifest.json`, `releaseAll/staging`,
 `releaseAll/bundle.zip`, `releaseAll/bundle-receipt.json`, and `releaseAll/deployment.json`.
 The existing shared properties override these conventions. Repository/Portal URLs and
-credentials use the shared conventions below. Module selection is finalized after all
-projects are evaluated. Keep planning and bundling in separate Gradle invocations.
+credentials use the shared conventions below. Configure module selection and opt-outs in
+the root build script; both lists are finalized after root configuration is complete.
+Keep planning and bundling in separate Gradle invocations.
 The manifest is tracked as a configuration-cache input when wiring the staging task graph.
+With `--configure-on-demand`, the plugin explicitly configures named modules and their
+production project dependencies during root evaluation, before inspecting publications.
+This mode checks `resumeId` early and may configure those projects for non-release invocations;
+status-only recovery skips that work. Default configuration keeps `releaseAll` lazy until
+needed. Use qualified root task
+paths (`:releaseAllPlan`, `:bundleAll`, `:releaseAll`) to avoid Gradle's recursive search for
+unqualified task selectors configuring unrelated projects. Planning and bundling with
+configure-on-demand and strict configuration-cache reuse are tested on both supported
+Gradle versions.
 With `releaseAll.resumeId` set, module preparation is skipped and only the saved deployment
 is resumed; the default deployment record is still `build/releaseAll/deployment.json`.
 
