@@ -177,7 +177,9 @@ releaseAllSigningCheck {
             run('releaseAllSigningCheck')
             run('bundleAll')
             assertTrue(new File(root, 'build/bundle.zip').isFile())
-            Set<String> entries = new java.util.zip.ZipFile(new File(root, 'build/bundle.zip')).entries().collect { it.name } as Set
+            Set<String> entries = new java.util.zip.ZipFile(new File(root, 'build/bundle.zip')).withCloseable { zip ->
+                zip.entries().collect { it.name } as Set
+            }
             assertEquals([
                 'g/platform/1/platform-1.pom', 'g/platform/1/platform-1.pom.md5', 'g/platform/1/platform-1.pom.sha1',
                 'g/platform/1/platform-1.pom.asc', 'g/platform/1/platform-1.pom.asc.md5', 'g/platform/1/platform-1.pom.asc.sha1',

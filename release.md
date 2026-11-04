@@ -1,5 +1,21 @@
 # Release history
 
+## Ver 2.5.0, unreleased
+- Add `combinedRelease { modules = [':core', ':api'] }` to combine existing Gradle Maven
+  publications without candidate JSON or custom staging code. Derive coordinates, artifact
+  filenames, generated POMs, and production project dependencies from the named modules.
+- Provide default combined output paths and wire source/signing guards, selected modules'
+  checks, signing, local staging, bundling, and upload. Planning remains a separate invocation;
+  resuming a deployment does not build, sign, or plan again.
+- Make static BOM and aggregate POMs independently optional. Gradle-only releases do not
+  need `releaseAllPrepareMaven`; invoking it without selected Maven components is a no-op
+  that requires no Maven helper scripts or tools.
+- Fix subset dependency checks: candidate namespaces are always checked, and explicit
+  production project edges remain checked across namespaces even when the sibling is omitted.
+- Cover real multi-module subsets, omitted published/unpublished dependencies, optional
+  static POMs, signing and ZIP contents, stale module selections, and configuration-cache reuse.
+- Close the optional-POM test's ZIP archive after inspecting it.
+
 ## Ver 2.4.0, 2026-10-11
 - Consolidate combined releases into `se.alipsa.nexus-release-plugin`, enabled by
   `nexusReleasePlugin { combinedRelease { } }`, with shared path, credential and endpoint conventions.

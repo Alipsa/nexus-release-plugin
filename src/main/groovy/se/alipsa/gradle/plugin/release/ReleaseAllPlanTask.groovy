@@ -14,6 +14,7 @@ abstract class ReleaseAllPlanTask extends DefaultTask {
     @Input abstract Property<String> getCandidatesJson()
     @Input abstract Property<String> getConfiguredRevision()
     @Input abstract org.gradle.api.provider.ListProperty<String> getReleaseNamespaces()
+    @Input abstract org.gradle.api.provider.ListProperty<String> getModulePaths()
     @Internal abstract DirectoryProperty getSourceDirectory()
     @InputFile @Optional @PathSensitive(PathSensitivity.RELATIVE) abstract RegularFileProperty getBomPom()
     @InputFile @Optional @PathSensitive(PathSensitivity.RELATIVE) abstract RegularFileProperty getAllPom()
@@ -26,7 +27,10 @@ abstract class ReleaseAllPlanTask extends DefaultTask {
     @OutputFile abstract RegularFileProperty getManifestFile()
     @OutputFile @Optional abstract RegularFileProperty getReportFile()
 
-    ReleaseAllPlanTask() { outputs.upToDateWhen { false } }
+    ReleaseAllPlanTask() {
+        modulePaths.convention([])
+        outputs.upToDateWhen { false }
+    }
 
     /** Performs fail-closed selection and persists all exclusions and source guards. */
     @TaskAction
@@ -70,10 +74,11 @@ abstract class ReleaseAllPlanTask extends DefaultTask {
             candidates.add(publication)
         }
         Set<String> candidateNames = candidates.collect { "${it.coordinate.groupId}:${it.coordinate.artifactId}".toString() } as Set
-        List<String> namespaces = releaseNamespaces.get()
+        // A subset must still check omitted siblings in each candidate's namespace.
+        List<String> namespaces = (releaseNamespaces.get() + candidates.collect { it.coordinate.groupId }).unique()
         candidates.each { PublicationDescriptor publication ->
             publication.dependencies = publication.dependencies.findAll { Map edge ->
-                !(edge.scope in ['test', 'system']) && (candidateNames.contains("${edge.groupId}:${edge.artifactId}".toString()) ||
+                !(edge.scope in ['test', 'system']) && (edge.projectPath || candidateNames.contains("${edge.groupId}:${edge.artifactId}".toString()) ||
                     namespaces.any { edge.groupId == it || edge.groupId?.startsWith(it + '.') })
             }
         }
@@ -96,7 +101,7 @@ abstract class ReleaseAllPlanTask extends DefaultTask {
             if (!input.isFile()) throw new IllegalStateException("Missing publication input: ${path}")
             hashes[path] = ReleaseChecksums.checksum(input, 'SHA-256')
         }
-        Map manifest = [schemaVersion: 1, revision: configuredRevision.get(), hashes: hashes,
+        Map manifest = [schemaVersion: 1, revision: configuredRevision.get(), hashes: hashes, modulePaths: modulePaths.get(),
             versions: candidates.findAll { it.projectPath }.collectEntries { [it.projectPath, it.coordinate.version] },
             selected: selected.collect { it.toMap() }, excluded: candidates.findAll { !it.reasons.empty }.collect { it.toMap() },
             verificationScope: scope.sort(), warnings: warnings, created: java.time.Instant.now().toString()]

@@ -26,18 +26,95 @@ Matrix provides the complete orchestration, prerequisites and command examples i
 During development it resolves this checkout through a Gradle composite build; publishing
 this plugin is a separate operation.
 
+## Select Gradle modules (2.5.0+)
+
+In the root build, list the project paths whose publications you want to consider:
+
+```groovy
+plugins { id 'se.alipsa.nexus-release-plugin' version '2.5.0' }
+
+nexusReleasePlugin {
+    userName = providers.gradleProperty('sonatypeUsername')
+    password = providers.gradleProperty('sonatypePassword')
+    combinedRelease {
+        modules = [':core', ':api'] // 'core' is also accepted; nested paths use ':tools:cli'
+        portalFixture = layout.projectDirectory.file('gradle/central-portal-fixture.json')
+    }
+}
+```
+
+Each named project must configure `maven-publish` and a Maven publication. A single Maven
+publication is selected automatically. For multiple publications, explicitly choose one with
+that project's `nexusReleasePlugin.mavenPublication`; ambiguity fails with an explanation.
+Coordinates and artifact names come from that publication, including custom artifact IDs.
+Normal JAR publications must include sources and Javadoc JARs, for example using
+`java { withSourcesJar(); withJavadocJar() }` before `from components.java`. POM-only
+publications are supported. Generated Gradle Module Metadata is included with its signature.
+
+Configure Gradle signing credentials in each selected module using the usual signing
+properties or `signing { useInMemoryPgpKeys(...) }`. The plugin applies `signing` and adds
+the publication signing task if needed. Credentials and the confirmed Portal fixture remain
+release prerequisites; the fixture format and availability policy are described below.
+
+```sh
+./gradlew releaseAllPlan  # Generate publication POMs and inspect eligibility; no compilation or signing
+./gradlew bundleAll       # Check, sign, stage, and bundle the saved selection
+./gradlew releaseAll      # Recheck/build the bundle as needed, then upload one deployment
+```
+
+Review `build/releaseAll/manifest.json` and the printed SELECT/SKIP report before bundling.
+Only eligible named modules are staged and included. Already-published and SNAPSHOT versions
+are excluded. Dependencies on omitted modules must already be published at their exact
+configured coordinates; dependencies in a different namespace and `compileOnly` project
+dependencies are checked too. Tests and system dependencies do not affect eligibility.
+Ordinary project dependencies may still build an omitted sibling's JAR for compilation;
+that sibling's publication is not signed, staged, or bundled. Changing the named subset
+requires a new plan. The source repository must remain clean and committed, with generated
+build outputs ignored by Git.
+
+The plugin wires source and signing checks before preparation, the selected modules' `check`
+tasks when available, publication signing, and publishing to a local file repository. It uses
+neither Maven local nor an external staging service. `combinedReleaseStaging` is a reserved
+repository name in selected modules. No BOM, aggregate POM, candidate JSON, or custom staging
+script is required. Do not run `releaseAllPrepareMaven` for a Gradle-only release; it does no
+work when the plan contains no selected static Maven components.
+
+Defaults in module mode are the root project as `sourceDirectory` and these paths under
+the root build directory: `releaseAll/manifest.json`, `releaseAll/staging`,
+`releaseAll/bundle.zip`, `releaseAll/bundle-receipt.json`, and `releaseAll/deployment.json`.
+The existing shared properties override these conventions. Repository/Portal URLs and
+credentials use the shared conventions below. Module selection is finalized after all
+projects are evaluated. Keep planning and bundling in separate Gradle invocations.
+The manifest is tracked as a configuration-cache input when wiring the staging task graph.
+With `releaseAll.resumeId` set, module preparation is skipped and only the saved deployment
+is resumed; the default deployment record is still `build/releaseAll/deployment.json`.
+
+Kotlin builds use the same typed list property:
+
+```kotlin
+nexusReleasePlugin {
+    combinedRelease {
+        modules.set(listOf(":core", ":api"))
+        portalFixture.set(layout.projectDirectory.file("gradle/central-portal-fixture.json"))
+    }
+}
+```
+
+The remaining sections describe the advanced task API. Leaving `modules` empty preserves
+explicit configuration and caller-managed orchestration for mixed Gradle/Maven builds.
+
 ## Task contract
 
-All file locations are configured explicitly through shared extension or typed task properties.
+Without module selection, file locations are configured explicitly through shared extension or typed task properties.
 Credentials can inherit from the parent extension; no paths have defaults.
 The source repository must be clean and committed. Generated files belong in ignored outputs.
 
 | Task | Inputs and behavior |
 | --- | --- |
-| `releaseAllPlan` | `sourceDirectory`, `configuredRevision`, `candidatesJson`, generated `candidatePoms`, optional static `bomPom`/`allPom` (BOM/aggregate components; omit both when the consumer has none), `repositoryUrl`, `portalUrl`, `userName`, `password`, `portalFixture`; writes `manifestFile` and optional `reportFile`. Never invokes Maven or resolves Maven candidates. |
+| `releaseAllPlan` | `sourceDirectory`, `configuredRevision`, `candidatesJson`, generated `candidatePoms`, independently optional static `bomPom` and `allPom` (configure either, both, or neither), `repositoryUrl`, `portalUrl`, `userName`, `password`, `portalFixture`; writes `manifestFile` and optional `reportFile`. Never invokes Maven or resolves Maven candidates. |
 | `releaseAllSigningCheck` | `manifestFile`, `configuredSigningJson` mapping project paths to signatory availability, `strict`; reports unavailable Gradle signing or fails when strict. No signing operation. |
 | `releaseAllGuard` | `sourceDirectory`, `manifestFile`, `versionsJson`; checks revision, clean tree, publication-POM hashes and Git index flags and effective publication versions before staging tasks run. |
-| `releaseAllPrepareMaven` | `sourceDirectory`, `manifestFile`, `stagingDirectory`, separate `localRepository`, `mavenWorkDirectory`, `verifierFile`, `settingsHelperFile`, `stagingRepositoryId` (default `release-staging`), optional `userSettingsFile` (default `~/.m2/settings.xml`); runs the caller's verifier and Maven `install -Prelease`, never deploy. The settings helper takes source user-settings, staged repository, output-settings and repository ID; it must preserve signing settings without logging secrets. |
+| `releaseAllPrepareMaven` | `sourceDirectory`, `manifestFile`; returns after source validation when no static Maven component is selected. Otherwise requires `stagingDirectory`, separate `localRepository`, `mavenWorkDirectory`, `verifierFile`, `settingsHelperFile`, `stagingRepositoryId` (default `release-staging`), optional `userSettingsFile` (default `~/.m2/settings.xml`); runs the caller's verifier and Maven `install -Prelease`, never deploy. The settings helper takes source user-settings, staged repository, output-settings and repository ID; it must preserve signing settings without logging secrets. |
 | `bundleAll` | `sourceDirectory`, `manifestFile`, `stagingDirectory`; writes `bundleFile` and `receiptFile`. Rechecks source, dependency POMs, metadata, artifact policy, nonempty signature files and staged checksums (signature cryptography is not verified). Generates MD5/SHA-1 for artifacts/signatures. |
 | `releaseAll` | `sourceDirectory`, `manifestFile`, `bundleFile`, `receiptFile`, `recordFile`, `portalFixture`, repository/Portal URLs and credentials; `resumeId` defaults to an empty string for a new upload, or a saved deployment ID for status-only recovery. Rechecks availability and uploads once. |
 
@@ -84,7 +161,7 @@ inherits parent `nexusUrl`. Unconfigured credentials remain unset. `repositoryUr
 to `https://repo.maven.apache.org/maven2`; it does not inherit `metadataBaseUrl`, because
 metadata lookup and exact-publication availability probes are separate endpoints and a
 proxy for one may not support the other. Configure both explicitly when using a shared proxy.
-All shared paths remain unset until configured.
+Shared paths remain unset until configured or module-mode conventions are applied.
 
 | Shared property | Tasks receiving its convention |
 | --- | --- |
@@ -94,6 +171,7 @@ All shared paths remain unset until configured.
 | `bundleFile`, `receiptFile` | `bundleAll`, `releaseAll` |
 | `recordFile` | `releaseAll` |
 | `repositoryUrl`, `portalUrl`, `userName`, `password` | `releaseAllPlan`, `releaseAll` |
+| `portalFixture` | `releaseAllPlan`, `releaseAll` |
 
 Inside the block, read-only typed task providers are `planTask`, `signingCheckTask`,
 `guardTask`, `prepareMavenTask`, `bundleAllTask` and `releaseAllTask`. They support
@@ -144,8 +222,11 @@ release; migrate composite-build consumers before using this checkout.
 Publication descriptors preserve exact configured coordinates, expected filenames, source
 project/publication or Maven POM, dependency origins, and published dependency/management
 expectations. Include production compile and runtime project edges even if omitted by POMs.
-Eligibility edges include candidate group/artifact pairs and groups covered by the optional
-`releaseAllPlan.releaseNamespaces` list (exact namespaces and their subgroups). Third-party
+Eligibility edges include candidate group/artifact pairs, all candidate group IDs and their
+subgroups, production project edges, and groups covered by the optional
+`releaseAllPlan.releaseNamespaces` list (exact namespaces and their subgroups). This always
+checks dependencies on omitted siblings within candidate namespaces, even when the explicit
+namespace list is empty. Third-party
 dependencies remain in POM expectations but are not availability probes; test/system edges
 are also excluded from eligibility. Candidate JSON requires a nonempty `files` list; omitted
 `dependencies` defaults to an empty list.

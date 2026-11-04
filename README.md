@@ -27,7 +27,7 @@ plugins {
   // your other plugins...
    id 'signing'
    id 'maven-publish'
-   id 'se.alipsa.nexus-release-plugin' version '2.4.0'
+   id 'se.alipsa.nexus-release-plugin' version '2.5.0'
 }
 
 publishing {
@@ -113,7 +113,7 @@ Example build.gradle:
 plugins {
   id 'groovy'
   id 'maven-publish'
-  id 'se.alipsa.nexus-release-plugin' version '2.4.0'
+  id 'se.alipsa.nexus-release-plugin' version '2.5.0'
 }
 
 group = 'se.alipsa'
@@ -221,19 +221,31 @@ Single-module behavior remains the default. See [configuration, shared-property 
 and migration instructions](combined-releases.md). The separate combined plugin ID and
 its implementation class are retired in 2.4.0.
 
-Enable combined tasks in the root build:
+Since 2.5.0, name the modules to combine in the root build. Each module needs an existing
+Maven publication; normal JAR publications include sources and Javadoc artifacts. The plugin
+uses the modules' signing configuration and publishes only the eligible named publications:
 
 ```groovy
 plugins {
-    id 'se.alipsa.nexus-release-plugin' version '2.4.0'
+    id 'se.alipsa.nexus-release-plugin' version '2.5.0'
 }
 
 nexusReleasePlugin {
+    userName = providers.gradleProperty('sonatypeUsername')
+    password = providers.gradleProperty('sonatypePassword')
     combinedRelease {
-        // Configure shared paths, credentials and task-specific inputs as described in the guide.
+        modules = [':core', ':api']
+        portalFixture = layout.projectDirectory.file('gradle/central-portal-fixture.json')
     }
 }
 ```
+
+Run `./gradlew releaseAllPlan` first and review the selection, then `./gradlew bundleAll`
+to check, sign, and bundle it, and `./gradlew releaseAll` to upload. The ZIP defaults to
+`build/releaseAll/bundle.zip`. Dependencies on omitted siblings must already be released.
+No BOM, Maven settings helper, candidate JSON, or custom staging tasks are needed.
+See [the combined-release guide](combined-releases.md) for signing prerequisites, confirmed
+Portal fixtures, Kotlin syntax, defaults, and the advanced task API.
 
 This registers `releaseAllPlan`, `releaseAllSigningCheck`, `releaseAllGuard`,
 `releaseAllPrepareMaven`, `bundleAll` and `releaseAll`. Configure named tasks after

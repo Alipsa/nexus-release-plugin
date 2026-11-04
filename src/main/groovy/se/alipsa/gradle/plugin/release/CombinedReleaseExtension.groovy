@@ -4,6 +4,7 @@ import groovy.transform.CompileStatic
 import org.gradle.api.file.DirectoryProperty
 import org.gradle.api.file.RegularFileProperty
 import org.gradle.api.provider.Property
+import org.gradle.api.provider.ListProperty
 import org.gradle.api.tasks.TaskProvider
 import javax.inject.Inject
 
@@ -29,6 +30,9 @@ class CombinedReleaseExtension {
         this.releaseAllTask = tasks.releaseAllTask
     }
 
+    /** Project paths whose Maven publications should be considered for one combined release. */
+    ListProperty<String> getModules() { shared.modules }
+    RegularFileProperty getPortalFixture() { shared.portalFixture }
     DirectoryProperty getSourceDirectory() { shared.sourceDirectory }
     RegularFileProperty getManifestFile() { shared.manifestFile }
     DirectoryProperty getStagingDirectory() { shared.stagingDirectory }
