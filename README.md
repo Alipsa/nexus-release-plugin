@@ -242,7 +242,7 @@ nexusReleasePlugin {
 
 Run `./gradlew releaseAllPlan` first and review the selection, then `./gradlew bundleAll`
 to check, sign, and bundle it, and `./gradlew releaseAll` to upload. The ZIP defaults to
-`build/releaseAll/bundle.zip`. Dependencies on omitted siblings must already be released.
+`build/releaseAll/<root project name>-mega-bundle.zip` (e.g. `build/releaseAll/jmlx-mega-bundle.zip`). Dependencies on omitted siblings must already be released.
 No BOM, Maven settings helper, candidate JSON, or custom staging tasks are needed.
 Embedded or compile-only internal projects can be declared explicitly with
 `unpublishedProjectDependencies`; see the guide for its publication-metadata requirements.

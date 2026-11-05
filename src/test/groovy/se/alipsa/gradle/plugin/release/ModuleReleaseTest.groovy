@@ -2,6 +2,7 @@ package se.alipsa.gradle.plugin.release
 
 import com.sun.net.httpserver.HttpServer
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.Timeout
 import org.junit.jupiter.api.io.TempDir
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
@@ -9,6 +10,8 @@ import java.util.zip.ZipFile
 import static org.junit.jupiter.api.Assertions.*
 
 class ModuleReleaseTest {
+    private static final String BUNDLE = 'build/releaseAll/module-release-fixture-mega-bundle.zip'
+
     @TempDir File root
 
     @Test void helpDoesNotRealizeReleaseAll() {
@@ -92,14 +95,14 @@ publishing.publications.maven.pom.withXml {
             if (!disableMetadata) {
                 def failed = runner('bundleAll').buildAndFail()
                 assertTrue(failed.output.contains("Unpublished project dependency ':core' is still referenced by Gradle Module Metadata"))
-                assertFalse(new File(root, 'build/releaseAll/bundle.zip').exists())
+                assertFalse(new File(root, BUNDLE).exists())
             } else {
                 run('bundleAll')
                 new ZipFile(new File(root, 'build/releaseAll/staging/example/api-artifact/1.0/api-artifact-1.0.jar')).withCloseable { jar ->
                     assertNotNull(jar.getEntry('Core.class'))
                     assertNotNull(jar.getEntry('Api.class'))
                 }
-                assertTrue(new File(root, 'build/releaseAll/bundle.zip').isFile())
+                assertTrue(new File(root, BUNDLE).isFile())
             }
         }
     }
@@ -212,7 +215,7 @@ if (gradle.startParameter.taskNames == ['help']) {
             Map publication = ReleaseManifest.read(new File(root, 'build/releaseAll/manifest.json')).selected.first()
             assertFalse(publication.files.any { it.endsWith('.module') })
             run('bundleAll')
-            new ZipFile(new File(root, 'build/releaseAll/bundle.zip')).withCloseable { zip ->
+            new ZipFile(new File(root, BUNDLE)).withCloseable { zip ->
                 assertFalse(zip.entries().any { it.name.contains('.module') })
             }
         }
@@ -241,7 +244,7 @@ if (gradle.startParameter.taskNames == ['help']) {
             assertNull(bundle.task(':unused:signMavenPublication'))
             assertNull(bundle.task(':unused:check'))
             assertNull(bundle.task(':releaseAllPrepareMaven'))
-            File zip = new File(root, 'build/releaseAll/bundle.zip')
+            File zip = new File(root, BUNDLE)
             Set<String> entries = new ZipFile(zip).withCloseable { it.entries().collect { it.name } as Set }
             Set<String> expected = [] as Set
             ['api-artifact', 'core-artifact'].each { String name ->
@@ -259,6 +262,22 @@ if (gradle.startParameter.taskNames == ['help']) {
         }
     }
 
+    @Test
+    @Timeout(120)
+    void consumerConfiguredBundleFileOverridesTheModuleModeDefault() {
+        withServer(Collections.synchronizedSet([] as Set), ['example:core-artifact:1.0'] as Set) { String base, List requests, List bodies ->
+            fixture(base, "modules = [':core']; bundleFile = layout.buildDirectory.file('custom/my-bundle.zip')")
+            run('releaseAllPlan')
+            run(':bundleAll')
+            assertTrue(new File(root, 'build/custom/my-bundle.zip').isFile())
+            assertFalse(new File(root, BUNDLE).exists())
+            run(':releaseAll')
+            assertTrue(requests.any { it.contains('/publisher/upload') })
+            assertTrue(bodies.any { it.contains('filename="my-bundle.zip"') },
+                { -> "upload should use my-bundle.zip; Content-Disposition lines: ${bodies*.readLines().flatten().findAll { it.startsWith('Content-Disposition') }}" } as java.util.function.Supplier)
+        }
+    }
+
     @Test void planAndConsumersCanShareAnInvocationAfterInitialPlanning() {
         withServer { String base, List requests ->
             fixture(base, "modules = [':core']")
@@ -266,7 +285,7 @@ if (gradle.startParameter.taskNames == ['help']) {
             // Request consumers first to prove ordering is independent of CLI order.
             def result = run(':bundleAll', ':releaseAllPrepareMaven', ':releaseAllPlan')
             assertNotNull(result.task(':core:signMavenPublication'))
-            assertTrue(new File(root, 'build/releaseAll/bundle.zip').isFile())
+            assertTrue(new File(root, BUNDLE).isFile())
             List<String> tasks = result.tasks*.path
             [':releaseAllSigningCheck', ':releaseAllGuard', ':releaseAllPrepareMaven', ':bundleAll'].each {
                 assertTrue(tasks.indexOf(':releaseAllPlan') < tasks.indexOf(it))
@@ -292,7 +311,7 @@ if (gradle.startParameter.taskNames == ['help']) {
             build.text = build.text.replace("modules = [':core']", "modules = [':api', ':core']")
             new File(root, 'api/src/main/java/Api.java').text = '/** Updated. */ public class Api { public int value() { return 42; } }'
             commit()
-            File zip = new File(root, 'build/releaseAll/bundle.zip')
+            File zip = new File(root, BUNDLE)
             File receipt = new File(root, 'build/releaseAll/bundle-receipt.json')
             assertTrue(zip.delete())
             assertTrue(receipt.delete())
@@ -336,9 +355,9 @@ if (gradle.startParameter.taskNames == ['help']) {
             commit()
             run(':releaseAllPlan')
             run(':bundleAll')
-            List<File> saved = ['manifest.json', 'bundle.zip', 'bundle-receipt.json'].collect {
+            List<File> saved = ['manifest.json', 'bundle-receipt.json'].collect {
                 new File(root, 'build/releaseAll/' + it)
-            }
+            } + new File(root, BUNDLE)
             List<byte[]> original = saved.collect { it.bytes }
             requests.clear()
             String[] flags = request == 'fullRelease' ? [] as String[] : [':releaseAll'] as String[]
@@ -389,7 +408,7 @@ if (gradle.startParameter.taskNames == ['help']) {
             def result = run('bundleAll')
             assertNull(result.task(':core:signMavenPublication'))
             assertNull(result.task(':core:publishMavenPublicationToCombinedReleaseStagingRepository'))
-            new ZipFile(new File(root, 'build/releaseAll/bundle.zip')).withCloseable { zip ->
+            new ZipFile(new File(root, BUNDLE)).withCloseable { zip ->
                 assertTrue(zip.entries().every { it.name.startsWith('example/api-artifact/') })
             }
         }
@@ -407,7 +426,7 @@ if (gradle.startParameter.taskNames == ['help']) {
             run('releaseAllPlan')
             assertEquals('pom', ReleaseManifest.read(new File(root, 'build/releaseAll/manifest.json')).selected.first().packaging)
             run('bundleAll')
-            new ZipFile(new File(root, 'build/releaseAll/bundle.zip')).withCloseable { zip ->
+            new ZipFile(new File(root, BUNDLE)).withCloseable { zip ->
                 assertEquals(6, zip.size())
                 assertTrue(zip.entries().every { it.name.contains('.pom') })
             }
@@ -560,22 +579,37 @@ ${name == 'api' ? "dependencies { ${compileOnly ? 'compileOnly' : 'api'} project
     }
 
     private void withServer(Set<String> published = [] as Set, Closure action) {
+        withServer(published, false, [] as Set) { String base, List requests, List bodies -> action(base, requests) }
+    }
+
+    /** Variant for full upload flows: captures bodies, answers uploads, and marks the given coordinates
+     *  published once the upload request arrives, so post-upload availability probes succeed. */
+    private void withServer(Set<String> published, Set<String> deployedOnUpload, Closure action) {
+        withServer(published, true, deployedOnUpload, action)
+    }
+
+    private void withServer(Set<String> published, boolean captureBodies, Set<String> deployedOnUpload, Closure action) {
         List<String> requests = Collections.synchronizedList([])
+        List<String> bodies = Collections.synchronizedList([])
         def server = HttpServer.create(new InetSocketAddress('127.0.0.1', 0), 0)
         server.createContext('/') { exchange ->
             requests.add(exchange.requestURI.toString())
             boolean portal = exchange.requestURI.path.contains('/publisher/published')
             boolean status = exchange.requestURI.path.contains('/publisher/status')
+            boolean upload = exchange.requestURI.path.contains('/publisher/upload')
             boolean released = published.any { String coordinate ->
                 def (group, name, version) = coordinate.split(':')
-                exchange.requestURI.path.endsWith("/${group.replace('.', '/')}/${name}/${version}/${name}-${version}.pom")
+                exchange.requestURI.path.endsWith("/${group.replace('.', '/')}/${name}/${version}/${name}-${version}.pom") ||
+                    exchange.requestURI.path.endsWith("/${group.replace('.', '/')}/${name}/${version}/${name}-${version}.jar")
             }
-            byte[] body = (status ? '{"deploymentState":"PUBLISHED"}' : portal ? '{"published":false}' : '').getBytes('UTF-8')
-            exchange.sendResponseHeaders(portal || status || released ? 200 : 404, exchange.requestMethod == 'HEAD' ? -1 : body.length)
+            if (captureBodies) bodies.add(new String(exchange.requestBody.readAllBytes(), 'UTF-8'))
+            if (upload) published.addAll(deployedOnUpload)
+            byte[] body = (status ? '{"deploymentState":"PUBLISHED"}' : portal ? '{"published":false}' : upload ? 'upload-deployment-id' : '').getBytes('UTF-8')
+            exchange.sendResponseHeaders(portal || status || upload || released ? 200 : 404, exchange.requestMethod == 'HEAD' ? -1 : body.length)
             exchange.responseBody.withCloseable { it.write(body) }
         }
         server.start()
-        try { action("http://127.0.0.1:${server.address.port}".toString(), requests) }
+        try { action("http://127.0.0.1:${server.address.port}".toString(), requests, bodies) }
         finally { server.stop(0) }
     }
 

@@ -29,7 +29,7 @@ final class ModuleReleaseConfigurer {
         extension.sourceDirectory.convention(project.layout.projectDirectory)
         extension.manifestFile.convention(project.layout.buildDirectory.file('releaseAll/manifest.json'))
         extension.stagingDirectory.convention(project.layout.buildDirectory.dir('releaseAll/staging'))
-        extension.bundleFile.convention(project.layout.buildDirectory.file('releaseAll/bundle.zip'))
+        extension.bundleFile.convention(project.layout.buildDirectory.file("releaseAll/${project.name}-mega-bundle.zip"))
         extension.receiptFile.convention(project.layout.buildDirectory.file('releaseAll/bundle-receipt.json'))
         extension.recordFile.convention(project.layout.buildDirectory.file('releaseAll/deployment.json'))
         // Under configure-on-demand, projects must be evaluated here, outside lazy task
