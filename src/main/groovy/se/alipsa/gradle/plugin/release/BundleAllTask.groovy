@@ -40,7 +40,7 @@ abstract class BundleAllTask extends DefaultTask {
     void bundle() {
         Map manifest = ReleaseManifest.read(manifestFile.get().asFile)
         if (wiredSelection.present && wiredSelection.get() != selectionJson(manifest.selected as List<Map>)) {
-            throw new IllegalStateException('Manifest selection changed after staging was configured; rerun :bundleAll in a separate invocation and review the saved plan before release')
+            throw new IllegalStateException('Manifest selection changed after staging was configured, or configured modules/publications do not match the saved plan; rerun :releaseAllPlan if needed, review the saved plan, then run :bundleAll in a separate invocation')
         }
         ReleaseManifest.guard(sourceDirectory.get().asFile, manifest)
         CombinedBundle.create(stagingDirectory.get().asFile, bundleFile.get().asFile, manifest.selected as List<Map>)

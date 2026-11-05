@@ -2,7 +2,7 @@
 
 ## Ver 2.5.1, 2026-11-05
 - Fix #11: use fixed, timezone-independent timestamps for all combined ZIP entries; document per-run receipt hashes and signing limits.
-- Fix #12: order manifest consumers after `releaseAllPlan` when scheduled together. Reject changed selections before bundling stale staging files, and reject explicitly requesting planning and upload together so the saved manifest can be reviewed. Preserve separate initial planning and status-only resume.
+- Fix #12: order manifest consumers after `releaseAllPlan` when scheduled together. Reject changed selections before bundling stale staging files, and reject resolved task graphs containing both planning and upload before any tasks run so the saved manifest can be reviewed. Preserve separate initial planning and status-only resume.
 
 ## Ver 2.5.0, 2026-11-05
 - Add `combinedRelease { modules = [':core', ':api'] }` to combine existing Gradle Maven

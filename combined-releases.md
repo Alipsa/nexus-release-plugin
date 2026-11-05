@@ -132,8 +132,9 @@ If a same-invocation replan changes the selected Gradle publications, bundling f
 before writing a ZIP or receipt, even when old artifacts remain in staging. Run
 `:bundleAll` again in a separate invocation to configure staging from the new selection.
 Do not request `:releaseAllPlan` and `:releaseAll` together: uploading in the same
-invocation as an explicitly requested planner is rejected. Review the saved manifest
-before running `:releaseAll` separately.
+invocation as the planner is rejected when Gradle resolves the task graph, before
+any tasks run. This includes qualified paths, task-name abbreviations, and lifecycle
+tasks that depend on both. Review the saved manifest before running `:releaseAll` separately.
 The manifest is tracked as a configuration-cache input when wiring the staging task graph.
 With `--configure-on-demand`, the plugin explicitly configures named modules and their
 production project dependencies during root evaluation, before inspecting publications.
@@ -206,8 +207,11 @@ saved manifest. All five manifest consumers declare `mustRunAfter(releaseAllPlan
 requesting the planner and consumers together respects that order and passes Gradle's
 task-dependency validation. This ordering does not schedule planning automatically:
 standalone consumers use the reviewed saved manifest, and resume does not run the planner.
-`releaseAll` rejects an explicitly requested `releaseAllPlan` in the same invocation,
-including qualified task paths, before contacting the upload API.
+A resolved graph containing both `releaseAllPlan` and `releaseAll` is rejected before
+planning, checks, signing, staging, bundling, or upload can run. Existing manifests,
+bundles, and receipts remain untouched. Rejected graphs cannot be reused from the
+configuration cache to bypass this check. Separate planning/bundling, standalone upload,
+and status-only resume retain cache support.
 Run source guards before staging, the caller's scoped verification before
 preparation, then `bundleAll`, then `releaseAll`. Do not upload if any preceding phase fails.
 The combined tasks support strict configuration-cache reuse; legacy verification tasks can

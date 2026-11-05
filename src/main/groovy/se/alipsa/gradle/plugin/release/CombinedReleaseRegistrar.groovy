@@ -2,6 +2,8 @@ package se.alipsa.gradle.plugin.release
 
 import groovy.transform.CompileStatic
 import groovy.transform.PackageScope
+import org.gradle.api.GradleException
+import org.gradle.api.execution.TaskExecutionGraph
 import org.gradle.api.model.ObjectFactory
 import org.gradle.api.tasks.TaskProvider
 
@@ -26,7 +28,7 @@ final class CombinedReleaseRegistrar {
             task.portalFixture.convention(shared.portalFixture)
             task.releaseNamespaces.convention([])
         }
-        // Order shared-manifest consumers when planning is explicitly scheduled. Do not
+        // Order shared-manifest consumers when planning is scheduled. Do not
         // schedule discovery automatically: staging uses a reviewed plan, and resume
         // must remain independent of current sources and publication availability.
         TaskProvider<SigningPreflightTask> signingCheckTask = tasks.register('releaseAllSigningCheck', SigningPreflightTask) { SigningPreflightTask task ->
@@ -66,10 +68,16 @@ final class CombinedReleaseRegistrar {
             task.password.convention(shared.password)
             task.portalFixture.convention(shared.portalFixture)
             task.resumeId.convention('')
-            // Snapshot request names during configuration; task actions never access Gradle.
-            task.plannedInSameInvocation.set(project.gradle.startParameter.taskNames.any {
-                it.tokenize(':').last() == 'releaseAllPlan'
-            })
+        }
+        // Inspect resolved paths without realizing tasks. Reject before any task actions,
+        // including when planning is scheduled through dependencies or abbreviations.
+        // Rejected graphs cannot be reused to bypass validation on the next invocation.
+        String planPath = project.absoluteProjectPath('releaseAllPlan')
+        String releasePath = project.absoluteProjectPath('releaseAll')
+        project.gradle.taskGraph.whenReady { TaskExecutionGraph graph ->
+            if (graph.hasTask(planPath) && graph.hasTask(releasePath)) {
+                throw new GradleException('Do not request releaseAllPlan and releaseAll in the same invocation; review the saved manifest, then run :releaseAll separately')
+            }
         }
         def providers = new CombinedReleaseTasks(planTask, signingCheckTask, guardTask, prepareMavenTask, bundleAllTask, releaseAllTask)
         CombinedReleaseExtension extension = objects.newInstance(CombinedReleaseExtension, shared, providers)

@@ -297,7 +297,8 @@ if (gradle.startParameter.taskNames == ['help']) {
             assertTrue(zip.delete())
             assertTrue(receipt.delete())
             def failed = runner(':releaseAllPlan', ':bundleAll').buildAndFail()
-            assertTrue(failed.output.contains('Manifest selection changed after staging was configured; rerun :bundleAll in a separate invocation'))
+            assertTrue(failed.output.contains('Manifest selection changed after staging was configured'))
+            assertTrue(failed.output.contains('configured modules/publications do not match the saved plan'))
             assertNull(failed.task(':api:signMavenPublication'))
             assertNull(failed.task(':api:check'))
             assertArrayEquals(staleBytes, stagedApi.bytes)
@@ -311,20 +312,46 @@ if (gradle.startParameter.taskNames == ['help']) {
         }
     }
 
-    @ParameterizedTest
-    @ValueSource(strings = ['releaseAllPlan', ':releaseAllPlan'])
-    void planningAndUploadingTogetherRequiresASeparateReviewedInvocation(String planner) {
+    @Test void savedPublicationMismatchReportsTheSavedPlan() {
         withServer { String base, List requests ->
             fixture(base, "modules = [':core']")
             run(':releaseAllPlan')
-            def failed = runner(planner, ':releaseAll').buildAndFail()
-            assertTrue(failed.output.contains('Do not request releaseAllPlan and releaseAll in the same invocation; review the saved manifest'))
-            assertFalse(new File(root, 'build/releaseAll/deployment.json').exists())
-            assertFalse(requests.any { it.contains('/publisher/upload') })
-            // Repeat under strict configuration-cache handling; replanning may invalidate it.
-            def cached = runner(planner, ':releaseAll').buildAndFail()
-            assertTrue(cached.output.contains('Do not request releaseAllPlan and releaseAll in the same invocation'))
-            assertFalse(requests.any { it.contains('/publisher/upload') })
+            run(':bundleAll')
+            File manifestFile = new File(root, 'build/releaseAll/manifest.json')
+            Map manifest = ReleaseManifest.read(manifestFile)
+            manifest.selected.first().publication = 'previousPublication'
+            ReleaseManifest.write(manifestFile, manifest)
+            def failed = runner(':bundleAll').buildAndFail()
+            assertTrue(failed.output.contains('configured modules/publications do not match the saved plan'))
+            assertNull(failed.task(':core:signMavenPublication'))
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = ['releaseAllPlan', ':releaseAllPlan', 'releaseAllPl', 'fullRelease'])
+    void planningAndUploadingTogetherFailsBeforeAnyTaskRuns(String request) {
+        withServer { String base, List requests ->
+            fixture(base, "modules = [':core']")
+            new File(root, 'build.gradle') << "\ntasks.register('fullRelease') { dependsOn 'releaseAllPlan', 'releaseAll' }\n"
+            commit()
+            run(':releaseAllPlan')
+            run(':bundleAll')
+            List<File> saved = ['manifest.json', 'bundle.zip', 'bundle-receipt.json'].collect {
+                new File(root, 'build/releaseAll/' + it)
+            }
+            List<byte[]> original = saved.collect { it.bytes }
+            requests.clear()
+            String[] flags = request == 'fullRelease' ? [] as String[] : [':releaseAll'] as String[]
+            // A rejected graph must not be reused to bypass validation on a retry.
+            2.times {
+                def failed = runner(request, *flags).buildAndFail()
+                assertTrue(failed.output.contains('Do not request releaseAllPlan and releaseAll in the same invocation; review the saved manifest'))
+                assertTrue(failed.tasks.empty, 'No planning, checking, signing, staging, or bundling task may run')
+                saved.eachWithIndex { File file, int index -> assertArrayEquals(original[index], file.bytes) }
+                assertFalse(new File(root, 'build/releaseAll/deployment.json').exists())
+                assertTrue(requests.empty, 'No Portal or repository request may run')
+                assertFalse(failed.output.contains('Reusing configuration cache'), failed.output)
+            }
         }
     }
 
