@@ -22,9 +22,16 @@ abstract class ReleaseAllTask extends DefaultTask {
     @Input abstract Property<String> getRepositoryUrl()
     @Input abstract Property<String> getResumeId()
 
+    @Internal abstract Property<Boolean> getPlannedInSameInvocation()
+
+    ReleaseAllTask() { plannedInSameInvocation.convention(false) }
+
     /** Checks source and availability before submitting, or resumes without building. */
     @TaskAction
     void release() {
+        if (plannedInSameInvocation.get()) {
+            throw new IllegalStateException('Do not request releaseAllPlan and releaseAll in the same invocation; review the saved manifest, then run :releaseAll separately')
+        }
         def client = new CentralPortalClient(logger, portalUrl.get(), userName.getOrElse(''), password.getOrElse(''))
         String id = resumeId.getOrElse('')
         File record = recordFile.get().asFile

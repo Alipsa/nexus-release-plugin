@@ -72,13 +72,14 @@ final class ModuleReleaseConfigurer {
 
         // Resolve only when bundling is scheduled, even if a consumer eagerly realizes tasks.
         // Finalization prevents repeated dependency queries from registering the repository twice.
-        def staging = project.objects.listProperty(Object)
+        def staging = project.objects.mapProperty(String, Object)
         staging.set(project.providers.provider { stagingTasks(project, extension, paths) })
         staging.finalizeValueOnRead()
         extension.bundleAllTask.configure { task ->
             task.dependsOn(extension.guardTask)
             task.dependsOn(extension.signingCheckTask)
-            task.dependsOn(staging)
+            task.dependsOn(staging.map { it.tasks })
+            task.wiredSelection.set(staging.map { it.selection })
         }
         extension.releaseAllTask.configure { task ->
             if (!task.resumeId.getOrElse('')) task.dependsOn(extension.bundleAllTask)
@@ -154,12 +155,13 @@ final class ModuleReleaseConfigurer {
             versionsJson: JsonOutput.toJson(descriptors.collectEntries { [(it.projectPath): it.version] }), pomTasks: pomTasks]
     }
 
-    private static List stagingTasks(Project project, CombinedReleaseExtension extension, List<String> paths) {
+    private static Map stagingTasks(Project project, CombinedReleaseExtension extension, List<String> paths) {
         // Only bundling reads the saved plan. Discovery does not consume its own output.
         // The provider invalidates the configuration cache when the selected subset changes.
         String manifestText = project.providers.fileContents(extension.manifestFile).asText.orNull
         Map manifest = manifestText ? new JsonSlurper().parseText(manifestText) as Map : [:]
         List stagedTasks = []
+        List<Map> stagedPublications = []
         (manifest.selected ?: []).each { Map selected ->
             if (!(selected.projectPath in paths)) return
             Project module = project.project(selected.projectPath)
@@ -195,8 +197,10 @@ final class ModuleReleaseConfigurer {
                 }
             }
             stagedTasks.add(publish)
+            stagedPublications.add([projectPath: module.path, publication: publication.name,
+                groupId: publication.groupId, artifactId: publication.artifactId, version: publication.version])
         }
-        stagedTasks
+        [tasks: stagedTasks, selection: BundleAllTask.selectionJson(stagedPublications)]
     }
 
     private static MavenPublication publicationFor(Project module, String label = 'Combined release module') {

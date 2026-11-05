@@ -278,6 +278,56 @@ if (gradle.startParameter.taskNames == ['help']) {
         }
     }
 
+    @Test void changedSelectionCannotReuseStaleStagedArtifactsAfterReplanning() {
+        withServer { String base, List requests ->
+            fixture(base, "modules = [':api', ':core']")
+            run(':releaseAllPlan')
+            run(':bundleAll')
+            File stagedApi = new File(root, 'build/releaseAll/staging/example/api-artifact/1.0/api-artifact-1.0.jar')
+            byte[] staleBytes = stagedApi.bytes
+            File build = new File(root, 'build.gradle')
+            build.text = build.text.replace("modules = [':api', ':core']", "modules = [':core']")
+            commit()
+            run(':releaseAllPlan')
+            build.text = build.text.replace("modules = [':core']", "modules = [':api', ':core']")
+            new File(root, 'api/src/main/java/Api.java').text = '/** Updated. */ public class Api { public int value() { return 42; } }'
+            commit()
+            File zip = new File(root, 'build/releaseAll/bundle.zip')
+            File receipt = new File(root, 'build/releaseAll/bundle-receipt.json')
+            assertTrue(zip.delete())
+            assertTrue(receipt.delete())
+            def failed = runner(':releaseAllPlan', ':bundleAll').buildAndFail()
+            assertTrue(failed.output.contains('Manifest selection changed after staging was configured; rerun :bundleAll in a separate invocation'))
+            assertNull(failed.task(':api:signMavenPublication'))
+            assertNull(failed.task(':api:check'))
+            assertArrayEquals(staleBytes, stagedApi.bytes)
+            assertFalse(zip.exists())
+            assertFalse(receipt.exists())
+            assertFalse(requests.any { it.contains('/publisher/upload') })
+            // A separate invocation configures staging from the new plan and repairs it.
+            run(':bundleAll')
+            assertFalse(Arrays.equals(staleBytes, stagedApi.bytes))
+            assertTrue(zip.isFile())
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = ['releaseAllPlan', ':releaseAllPlan'])
+    void planningAndUploadingTogetherRequiresASeparateReviewedInvocation(String planner) {
+        withServer { String base, List requests ->
+            fixture(base, "modules = [':core']")
+            run(':releaseAllPlan')
+            def failed = runner(planner, ':releaseAll').buildAndFail()
+            assertTrue(failed.output.contains('Do not request releaseAllPlan and releaseAll in the same invocation; review the saved manifest'))
+            assertFalse(new File(root, 'build/releaseAll/deployment.json').exists())
+            assertFalse(requests.any { it.contains('/publisher/upload') })
+            // Repeat under strict configuration-cache handling; replanning may invalidate it.
+            def cached = runner(planner, ':releaseAll').buildAndFail()
+            assertTrue(cached.output.contains('Do not request releaseAllPlan and releaseAll in the same invocation'))
+            assertFalse(requests.any { it.contains('/publisher/upload') })
+        }
+    }
+
     @Test void omittedUnpublishedSiblingBlocksConsumerAcrossNamespacesAndCompileOnlyEdges() {
         withServer { String base, List requests ->
             fixture(base, "modules = [':api']; unpublishedProjectDependencies = [':core']", true)

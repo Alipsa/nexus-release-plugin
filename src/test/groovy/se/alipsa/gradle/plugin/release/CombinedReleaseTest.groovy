@@ -3,9 +3,11 @@ package se.alipsa.gradle.plugin.release
 import com.sun.net.httpserver.HttpServer
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import org.junit.jupiter.api.parallel.Isolated
 import java.util.zip.ZipFile
 import static org.junit.jupiter.api.Assertions.*
 
+@Isolated("Changes the JVM default timezone for reproducibility checks")
 class CombinedReleaseTest {
     @TempDir File directory
 

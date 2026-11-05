@@ -9,7 +9,8 @@ import java.util.zip.ZipOutputStream
 class CombinedBundle {
     static final long MAX_BYTES = 1_000_000_000L
 
-    // A DOS-compatible local time avoids timezone-dependent fields and extended timestamps.
+    // February stays clear of the 1980-01-01 DOS lower bound in every timezone,
+    // avoiding extended timestamps (and matching Gradle's reproducible archive date).
     private static final LocalDateTime ENTRY_TIME = LocalDateTime.of(1980, 2, 1, 0, 0)
 
     private static ZipEntry entry(String path) {

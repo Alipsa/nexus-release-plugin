@@ -66,6 +66,10 @@ final class CombinedReleaseRegistrar {
             task.password.convention(shared.password)
             task.portalFixture.convention(shared.portalFixture)
             task.resumeId.convention('')
+            // Snapshot request names during configuration; task actions never access Gradle.
+            task.plannedInSameInvocation.set(project.gradle.startParameter.taskNames.any {
+                it.tokenize(':').last() == 'releaseAllPlan'
+            })
         }
         def providers = new CombinedReleaseTasks(planTask, signingCheckTask, guardTask, prepareMavenTask, bundleAllTask, releaseAllTask)
         CombinedReleaseExtension extension = objects.newInstance(CombinedReleaseExtension, shared, providers)
