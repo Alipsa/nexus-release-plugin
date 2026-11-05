@@ -2,6 +2,7 @@ package se.alipsa.gradle.plugin.release
 
 import com.sun.net.httpserver.HttpServer
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.Timeout
 import org.junit.jupiter.api.io.TempDir
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
@@ -262,7 +263,7 @@ if (gradle.startParameter.taskNames == ['help']) {
     }
 
     @Test
-    @org.junit.jupiter.api.Timeout(120)
+    @Timeout(120)
     void consumerConfiguredBundleFileOverridesTheModuleModeDefault() {
         withServer(Collections.synchronizedSet([] as Set), ['example:core-artifact:1.0'] as Set) { String base, List requests, List bodies ->
             fixture(base, "modules = [':core']; bundleFile = layout.buildDirectory.file('custom/my-bundle.zip')")
