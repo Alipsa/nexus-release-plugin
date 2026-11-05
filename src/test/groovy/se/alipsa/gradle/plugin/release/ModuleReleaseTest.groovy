@@ -261,7 +261,9 @@ if (gradle.startParameter.taskNames == ['help']) {
         }
     }
 
-    @Test void consumerConfiguredBundleFileOverridesTheModuleModeDefault() {
+    @Test
+    @org.junit.jupiter.api.Timeout(120)
+    void consumerConfiguredBundleFileOverridesTheModuleModeDefault() {
         withServer(Collections.synchronizedSet([] as Set), ['example:core-artifact:1.0'] as Set) { String base, List requests, List bodies ->
             fixture(base, "modules = [':core']; bundleFile = layout.buildDirectory.file('custom/my-bundle.zip')")
             run('releaseAllPlan')
@@ -271,7 +273,7 @@ if (gradle.startParameter.taskNames == ['help']) {
             run(':releaseAll')
             assertTrue(requests.any { it.contains('/publisher/upload') })
             assertTrue(bodies.any { it.contains('filename="my-bundle.zip"') },
-                "upload should use the configured bundle file, bodies: ${bodies*.readLines()?.flatten()}")
+                { -> "upload should use my-bundle.zip; Content-Disposition lines: ${bodies*.readLines().flatten().findAll { it.startsWith('Content-Disposition') }}" } as java.util.function.Supplier)
         }
     }
 
@@ -577,11 +579,6 @@ ${name == 'api' ? "dependencies { ${compileOnly ? 'compileOnly' : 'api'} project
 
     private void withServer(Set<String> published = [] as Set, Closure action) {
         withServer(published, false, [] as Set) { String base, List requests, List bodies -> action(base, requests) }
-    }
-
-    /** Variant that also captures request bodies and answers uploads; the closure receives (base, requests, bodies). */
-    private void withServer(Set<String> published, boolean captureBodies, Closure action) {
-        withServer(published, captureBodies, [] as Set, action)
     }
 
     /** Variant for full upload flows: captures bodies, answers uploads, and marks the given coordinates
