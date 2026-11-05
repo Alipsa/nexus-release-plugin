@@ -26,22 +26,29 @@ final class CombinedReleaseRegistrar {
             task.portalFixture.convention(shared.portalFixture)
             task.releaseNamespaces.convention([])
         }
+        // Order shared-manifest consumers when planning is explicitly scheduled. Do not
+        // schedule discovery automatically: staging uses a reviewed plan, and resume
+        // must remain independent of current sources and publication availability.
         TaskProvider<SigningPreflightTask> signingCheckTask = tasks.register('releaseAllSigningCheck', SigningPreflightTask) { SigningPreflightTask task ->
             task.manifestFile.convention(shared.manifestFile)
+            task.mustRunAfter(planTask)
         }
         TaskProvider<ReleaseSourceGuardTask> guardTask = tasks.register('releaseAllGuard', ReleaseSourceGuardTask) { ReleaseSourceGuardTask task ->
             task.sourceDirectory.convention(shared.sourceDirectory)
             task.manifestFile.convention(shared.manifestFile)
+            task.mustRunAfter(planTask)
         }
         TaskProvider<PrepareMavenTask> prepareMavenTask = tasks.register('releaseAllPrepareMaven', PrepareMavenTask) { PrepareMavenTask task ->
             task.sourceDirectory.convention(shared.sourceDirectory)
             task.manifestFile.convention(shared.manifestFile)
+            task.mustRunAfter(planTask)
             task.stagingDirectory.convention(shared.stagingDirectory)
             task.stagingRepositoryId.convention('release-staging')
         }
         TaskProvider<BundleAllTask> bundleAllTask = tasks.register('bundleAll', BundleAllTask) { BundleAllTask task ->
             task.sourceDirectory.convention(shared.sourceDirectory)
             task.manifestFile.convention(shared.manifestFile)
+            task.mustRunAfter(planTask)
             task.stagingDirectory.convention(shared.stagingDirectory)
             task.bundleFile.convention(shared.bundleFile)
             task.receiptFile.convention(shared.receiptFile)
@@ -49,6 +56,7 @@ final class CombinedReleaseRegistrar {
         TaskProvider<ReleaseAllTask> releaseAllTask = tasks.register('releaseAll', ReleaseAllTask) { ReleaseAllTask task ->
             task.sourceDirectory.convention(shared.sourceDirectory)
             task.manifestFile.convention(shared.manifestFile)
+            task.mustRunAfter(planTask)
             task.bundleFile.convention(shared.bundleFile)
             task.receiptFile.convention(shared.receiptFile)
             task.recordFile.convention(shared.recordFile)

@@ -259,6 +259,25 @@ if (gradle.startParameter.taskNames == ['help']) {
         }
     }
 
+    @Test void planAndConsumersCanShareAnInvocationAfterInitialPlanning() {
+        withServer { String base, List requests ->
+            fixture(base, "modules = [':core']")
+            run(':releaseAllPlan')
+            // Request consumers first to prove ordering is independent of CLI order.
+            def result = run(':bundleAll', ':releaseAllPrepareMaven', ':releaseAllPlan')
+            assertNotNull(result.task(':core:signMavenPublication'))
+            assertTrue(new File(root, 'build/releaseAll/bundle.zip').isFile())
+            List<String> tasks = result.tasks*.path
+            [':releaseAllSigningCheck', ':releaseAllGuard', ':releaseAllPrepareMaven', ':bundleAll'].each {
+                assertTrue(tasks.indexOf(':releaseAllPlan') < tasks.indexOf(it))
+            }
+            // Replanning updates the manifest configuration input; standalone bundles
+            // retain cache reuse once that saved manifest is stable.
+            run(':bundleAll')
+            assertTrue(run(':bundleAll').output.contains('Reusing configuration cache'))
+        }
+    }
+
     @Test void omittedUnpublishedSiblingBlocksConsumerAcrossNamespacesAndCompileOnlyEdges() {
         withServer { String base, List requests ->
             fixture(base, "modules = [':api']; unpublishedProjectDependencies = [':core']", true)
