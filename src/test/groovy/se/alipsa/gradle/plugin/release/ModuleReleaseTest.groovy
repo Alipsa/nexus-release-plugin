@@ -9,6 +9,8 @@ import java.util.zip.ZipFile
 import static org.junit.jupiter.api.Assertions.*
 
 class ModuleReleaseTest {
+    private static final String BUNDLE = 'build/releaseAll/' + 'module-release-fixture-mega-bundle.zip'
+
     @TempDir File root
 
     @Test void helpDoesNotRealizeReleaseAll() {
@@ -92,14 +94,14 @@ publishing.publications.maven.pom.withXml {
             if (!disableMetadata) {
                 def failed = runner('bundleAll').buildAndFail()
                 assertTrue(failed.output.contains("Unpublished project dependency ':core' is still referenced by Gradle Module Metadata"))
-                assertFalse(new File(root, 'build/releaseAll/module-release-fixture-mega-bundle.zip').exists())
+                assertFalse(new File(root, BUNDLE).exists())
             } else {
                 run('bundleAll')
                 new ZipFile(new File(root, 'build/releaseAll/staging/example/api-artifact/1.0/api-artifact-1.0.jar')).withCloseable { jar ->
                     assertNotNull(jar.getEntry('Core.class'))
                     assertNotNull(jar.getEntry('Api.class'))
                 }
-                assertTrue(new File(root, 'build/releaseAll/module-release-fixture-mega-bundle.zip').isFile())
+                assertTrue(new File(root, BUNDLE).isFile())
             }
         }
     }
@@ -212,7 +214,7 @@ if (gradle.startParameter.taskNames == ['help']) {
             Map publication = ReleaseManifest.read(new File(root, 'build/releaseAll/manifest.json')).selected.first()
             assertFalse(publication.files.any { it.endsWith('.module') })
             run('bundleAll')
-            new ZipFile(new File(root, 'build/releaseAll/module-release-fixture-mega-bundle.zip')).withCloseable { zip ->
+            new ZipFile(new File(root, BUNDLE)).withCloseable { zip ->
                 assertFalse(zip.entries().any { it.name.contains('.module') })
             }
         }
@@ -241,7 +243,7 @@ if (gradle.startParameter.taskNames == ['help']) {
             assertNull(bundle.task(':unused:signMavenPublication'))
             assertNull(bundle.task(':unused:check'))
             assertNull(bundle.task(':releaseAllPrepareMaven'))
-            File zip = new File(root, 'build/releaseAll/module-release-fixture-mega-bundle.zip')
+            File zip = new File(root, BUNDLE)
             Set<String> entries = new ZipFile(zip).withCloseable { it.entries().collect { it.name } as Set }
             Set<String> expected = [] as Set
             ['api-artifact', 'core-artifact'].each { String name ->
@@ -259,6 +261,16 @@ if (gradle.startParameter.taskNames == ['help']) {
         }
     }
 
+    @Test void consumerConfiguredBundleFileOverridesTheModuleModeDefault() {
+        withServer { String base, List requests ->
+            fixture(base, "modules = [':core']; bundleFile = layout.buildDirectory.file('custom/my-bundle.zip')")
+            run('releaseAllPlan')
+            run('bundleAll')
+            assertTrue(new File(root, 'build/custom/my-bundle.zip').isFile())
+            assertFalse(new File(root, BUNDLE).exists())
+        }
+    }
+
     @Test void planAndConsumersCanShareAnInvocationAfterInitialPlanning() {
         withServer { String base, List requests ->
             fixture(base, "modules = [':core']")
@@ -266,7 +278,7 @@ if (gradle.startParameter.taskNames == ['help']) {
             // Request consumers first to prove ordering is independent of CLI order.
             def result = run(':bundleAll', ':releaseAllPrepareMaven', ':releaseAllPlan')
             assertNotNull(result.task(':core:signMavenPublication'))
-            assertTrue(new File(root, 'build/releaseAll/module-release-fixture-mega-bundle.zip').isFile())
+            assertTrue(new File(root, BUNDLE).isFile())
             List<String> tasks = result.tasks*.path
             [':releaseAllSigningCheck', ':releaseAllGuard', ':releaseAllPrepareMaven', ':bundleAll'].each {
                 assertTrue(tasks.indexOf(':releaseAllPlan') < tasks.indexOf(it))
@@ -292,7 +304,7 @@ if (gradle.startParameter.taskNames == ['help']) {
             build.text = build.text.replace("modules = [':core']", "modules = [':api', ':core']")
             new File(root, 'api/src/main/java/Api.java').text = '/** Updated. */ public class Api { public int value() { return 42; } }'
             commit()
-            File zip = new File(root, 'build/releaseAll/module-release-fixture-mega-bundle.zip')
+            File zip = new File(root, BUNDLE)
             File receipt = new File(root, 'build/releaseAll/bundle-receipt.json')
             assertTrue(zip.delete())
             assertTrue(receipt.delete())
@@ -336,9 +348,9 @@ if (gradle.startParameter.taskNames == ['help']) {
             commit()
             run(':releaseAllPlan')
             run(':bundleAll')
-            List<File> saved = ['manifest.json', 'module-release-fixture-mega-bundle.zip', 'bundle-receipt.json'].collect {
+            List<File> saved = ['manifest.json', 'bundle-receipt.json'].collect {
                 new File(root, 'build/releaseAll/' + it)
-            }
+            } + new File(root, BUNDLE)
             List<byte[]> original = saved.collect { it.bytes }
             requests.clear()
             String[] flags = request == 'fullRelease' ? [] as String[] : [':releaseAll'] as String[]
@@ -389,7 +401,7 @@ if (gradle.startParameter.taskNames == ['help']) {
             def result = run('bundleAll')
             assertNull(result.task(':core:signMavenPublication'))
             assertNull(result.task(':core:publishMavenPublicationToCombinedReleaseStagingRepository'))
-            new ZipFile(new File(root, 'build/releaseAll/module-release-fixture-mega-bundle.zip')).withCloseable { zip ->
+            new ZipFile(new File(root, BUNDLE)).withCloseable { zip ->
                 assertTrue(zip.entries().every { it.name.startsWith('example/api-artifact/') })
             }
         }
@@ -407,7 +419,7 @@ if (gradle.startParameter.taskNames == ['help']) {
             run('releaseAllPlan')
             assertEquals('pom', ReleaseManifest.read(new File(root, 'build/releaseAll/manifest.json')).selected.first().packaging)
             run('bundleAll')
-            new ZipFile(new File(root, 'build/releaseAll/module-release-fixture-mega-bundle.zip')).withCloseable { zip ->
+            new ZipFile(new File(root, BUNDLE)).withCloseable { zip ->
                 assertEquals(6, zip.size())
                 assertTrue(zip.entries().every { it.name.contains('.pom') })
             }

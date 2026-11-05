@@ -5,6 +5,9 @@
   `<root project name>-mega-bundle.zip` (e.g. `jmlx-mega-bundle.zip`), which is
   also used as the Central Portal deployment name. Override with
   `combinedRelease { bundleFile = ... }` as before.
+- Re-run `bundleAll` after upgrading if a bundle was built with an earlier
+  version; the old `build/releaseAll/bundle.zip` is no longer used and can be
+  deleted.
 
 ## Ver 2.5.1, 2026-11-05
 - Fix #11: use fixed, timezone-independent timestamps for all combined ZIP entries; document per-run receipt hashes and signing limits.
