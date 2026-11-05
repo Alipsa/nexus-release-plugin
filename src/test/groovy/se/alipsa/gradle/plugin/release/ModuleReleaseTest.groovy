@@ -9,7 +9,7 @@ import java.util.zip.ZipFile
 import static org.junit.jupiter.api.Assertions.*
 
 class ModuleReleaseTest {
-    private static final String BUNDLE = 'build/releaseAll/' + 'module-release-fixture-mega-bundle.zip'
+    private static final String BUNDLE = 'build/releaseAll/module-release-fixture-mega-bundle.zip'
 
     @TempDir File root
 
@@ -262,12 +262,16 @@ if (gradle.startParameter.taskNames == ['help']) {
     }
 
     @Test void consumerConfiguredBundleFileOverridesTheModuleModeDefault() {
-        withServer { String base, List requests ->
+        withServer(Collections.synchronizedSet([] as Set), ['example:core-artifact:1.0'] as Set) { String base, List requests, List bodies ->
             fixture(base, "modules = [':core']; bundleFile = layout.buildDirectory.file('custom/my-bundle.zip')")
             run('releaseAllPlan')
-            run('bundleAll')
+            run(':bundleAll')
             assertTrue(new File(root, 'build/custom/my-bundle.zip').isFile())
             assertFalse(new File(root, BUNDLE).exists())
+            run(':releaseAll')
+            assertTrue(requests.any { it.contains('/publisher/upload') })
+            assertTrue(bodies.any { it.contains('filename="my-bundle.zip"') },
+                "upload should use the configured bundle file, bodies: ${bodies*.readLines()?.flatten()}")
         }
     }
 
@@ -572,22 +576,42 @@ ${name == 'api' ? "dependencies { ${compileOnly ? 'compileOnly' : 'api'} project
     }
 
     private void withServer(Set<String> published = [] as Set, Closure action) {
+        withServer(published, false, [] as Set) { String base, List requests, List bodies -> action(base, requests) }
+    }
+
+    /** Variant that also captures request bodies and answers uploads; the closure receives (base, requests, bodies). */
+    private void withServer(Set<String> published, boolean captureBodies, Closure action) {
+        withServer(published, captureBodies, [] as Set, action)
+    }
+
+    /** Variant for full upload flows: captures bodies, answers uploads, and marks the given coordinates
+     *  published once the upload request arrives, so post-upload availability probes succeed. */
+    private void withServer(Set<String> published, Set<String> deployedOnUpload, Closure action) {
+        withServer(published, true, deployedOnUpload, action)
+    }
+
+    private void withServer(Set<String> published, boolean captureBodies, Set<String> deployedOnUpload, Closure action) {
         List<String> requests = Collections.synchronizedList([])
+        List<String> bodies = Collections.synchronizedList([])
         def server = HttpServer.create(new InetSocketAddress('127.0.0.1', 0), 0)
         server.createContext('/') { exchange ->
             requests.add(exchange.requestURI.toString())
             boolean portal = exchange.requestURI.path.contains('/publisher/published')
             boolean status = exchange.requestURI.path.contains('/publisher/status')
+            boolean upload = exchange.requestURI.path.contains('/publisher/upload')
             boolean released = published.any { String coordinate ->
                 def (group, name, version) = coordinate.split(':')
-                exchange.requestURI.path.endsWith("/${group.replace('.', '/')}/${name}/${version}/${name}-${version}.pom")
+                exchange.requestURI.path.endsWith("/${group.replace('.', '/')}/${name}/${version}/${name}-${version}.pom") ||
+                    exchange.requestURI.path.endsWith("/${group.replace('.', '/')}/${name}/${version}/${name}-${version}.jar")
             }
-            byte[] body = (status ? '{"deploymentState":"PUBLISHED"}' : portal ? '{"published":false}' : '').getBytes('UTF-8')
-            exchange.sendResponseHeaders(portal || status || released ? 200 : 404, exchange.requestMethod == 'HEAD' ? -1 : body.length)
+            if (captureBodies) bodies.add(new String(exchange.requestBody.readAllBytes(), 'UTF-8'))
+            if (upload) published.addAll(deployedOnUpload)
+            byte[] body = (status ? '{"deploymentState":"PUBLISHED"}' : portal ? '{"published":false}' : upload ? 'upload-deployment-id' : '').getBytes('UTF-8')
+            exchange.sendResponseHeaders(portal || status || upload || released ? 200 : 404, exchange.requestMethod == 'HEAD' ? -1 : body.length)
             exchange.responseBody.withCloseable { it.write(body) }
         }
         server.start()
-        try { action("http://127.0.0.1:${server.address.port}".toString(), requests) }
+        try { action("http://127.0.0.1:${server.address.port}".toString(), requests, bodies) }
         finally { server.stop(0) }
     }
 
