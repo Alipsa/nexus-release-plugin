@@ -1,12 +1,23 @@
 package se.alipsa.gradle.plugin.release
 
 import groovy.json.JsonSlurper
+import java.time.LocalDateTime
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
 /** Builds one validated allow-listed Maven-layout archive. */
 class CombinedBundle {
     static final long MAX_BYTES = 1_000_000_000L
+
+    // February stays clear of the 1980-01-01 DOS lower bound in every timezone,
+    // avoiding extended timestamps (and matching Gradle's reproducible archive date).
+    private static final LocalDateTime ENTRY_TIME = LocalDateTime.of(1980, 2, 1, 0, 0)
+
+    private static ZipEntry entry(String path) {
+        ZipEntry entry = new ZipEntry(path)
+        entry.setTimeLocal(ENTRY_TIME)
+        entry
+    }
 
     /** Validates all components before writing any ZIP entry. */
     static void create(File staging, File target, List<Map> publications, long limit = MAX_BYTES) {
@@ -80,9 +91,9 @@ class CombinedBundle {
                 }
                 new ZipOutputStream(bounded).withCloseable { zip ->
                     entries.sort().each { String path, File source ->
-                        zip.putNextEntry(new ZipEntry(path)); source.withInputStream { it.transferTo(zip) }; zip.closeEntry()
+                        zip.putNextEntry(entry(path)); source.withInputStream { it.transferTo(zip) }; zip.closeEntry()
                         ['MD5', 'SHA-1'].each { String algorithm ->
-                            zip.putNextEntry(new ZipEntry(path + '.' + algorithm.toLowerCase().replace('-', '')))
+                            zip.putNextEntry(entry(path + '.' + algorithm.toLowerCase().replace('-', '')))
                             zip.write(checksums[path][algorithm].getBytes('UTF-8')); zip.closeEntry()
                         }
                     }

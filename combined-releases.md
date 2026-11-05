@@ -31,7 +31,7 @@ this plugin is a separate operation.
 In the root build, list the project paths whose publications you want to consider:
 
 ```groovy
-plugins { id 'se.alipsa.nexus-release-plugin' version '2.5.0' }
+plugins { id 'se.alipsa.nexus-release-plugin' version '2.5.1' }
 
 nexusReleasePlugin {
     userName = providers.gradleProperty('sonatypeUsername')
@@ -124,7 +124,17 @@ The existing shared properties override these conventions. Repository/Portal URL
 credentials use the shared conventions below. Configure module selection and opt-outs in
 the root build script. Both lists are finalized after all projects are evaluated in default
 mode, or at the end of root-project evaluation with configure-on-demand.
-Keep planning and bundling in separate Gradle invocations.
+Run `./gradlew :releaseAllPlan` in a separate invocation before the first bundle, and
+again whenever the selected publications change. Staging dependencies are configured
+from that saved manifest before tasks execute. Once the saved selection is established,
+`./gradlew :releaseAllPlan :bundleAll` is supported: consumers run after the planner.
+If a same-invocation replan changes the selected Gradle publications, bundling fails
+before writing a ZIP or receipt, even when old artifacts remain in staging. Run
+`:bundleAll` again in a separate invocation to configure staging from the new selection.
+Do not request `:releaseAllPlan` and `:releaseAll` together: uploading in the same
+invocation as the planner is rejected when Gradle resolves the task graph, before
+any tasks run. This includes qualified paths, task-name abbreviations, and lifecycle
+tasks that depend on both. Review the saved manifest before running `:releaseAll` separately.
 The manifest is tracked as a configuration-cache input when wiring the staging task graph.
 With `--configure-on-demand`, the plugin explicitly configures named modules and their
 production project dependencies during root evaluation, before inspecting publications.
@@ -193,14 +203,28 @@ tasks.named('releaseAllPlan') {
 ```
 
 Run discovery in a separate invocation before configuring staging dependencies from the
-saved manifest. Shared path conventions do not add task dependencies. Scheduling
-`releaseAllPlan` alongside a guard, preparation or signing-check task that reads its
-manifest without explicit ordering/dependencies can produce Gradle's implicit/missing
-task-dependency error. Keep discovery separate; resume must not acquire a planner dependency.
+saved manifest. The signing check, source guard, Maven preparation, and bundle tasks
+declare `mustRunAfter(releaseAllPlan)`, so requesting the planner and these consumers
+together respects that order and passes Gradle's task-dependency validation. This ordering does not schedule planning automatically:
+standalone consumers use the reviewed saved manifest, and resume does not run the planner.
+A resolved graph containing both `releaseAllPlan` and `releaseAll` is rejected before
+planning, checks, signing, staging, bundling, or upload can run. Existing manifests,
+bundles, and receipts remain untouched. Rejected graphs cannot be reused from the
+configuration cache to bypass this check. Separate planning/bundling, standalone upload,
+and status-only resume retain cache support.
 Run source guards before staging, the caller's scoped verification before
 preparation, then `bundleAll`, then `releaseAll`. Do not upload if any preceding phase fails.
 The combined tasks support strict configuration-cache reuse; legacy verification tasks can
 run with `--no-configuration-cache` independently.
+
+Combined ZIP entries, including signatures and checksums, use the fixed local ZIP time
+`1980-02-01 00:00:00`. For the same JDK, identical staged bytes produce an identical ZIP
+regardless of file modification times or the system timezone. Compressed bytes can differ between
+JDK versions, vendors, or compression-library builds. The receipt's `bundleHash` identifies
+the exact ZIP bytes for that run and upload; it is not a stable content address for a
+release. Regenerating GPG signatures can change their embedded creation times and thus
+the staged bytes and bundle hash. `bundleAll` runs each time it is requested, including
+as a dependency of `releaseAll`.
 
 ## Shared conventions
 

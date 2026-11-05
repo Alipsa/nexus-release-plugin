@@ -3,9 +3,11 @@ package se.alipsa.gradle.plugin.release
 import com.sun.net.httpserver.HttpServer
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import org.junit.jupiter.api.parallel.Isolated
 import java.util.zip.ZipFile
 import static org.junit.jupiter.api.Assertions.*
 
+@Isolated("Changes the JVM default timezone for reproducibility checks")
 class CombinedReleaseTest {
     @TempDir File directory
 
@@ -157,6 +159,38 @@ class CombinedReleaseTest {
         assertThrows(IllegalArgumentException) { CombinedBundle.create(directory, zip, [pom, all], 1) }
         new File(directory, 'g/matrix-all/1/matrix-all-1.jar.asc').delete()
         assertThrows(IllegalArgumentException) { CombinedBundle.create(directory, zip, [all]) }
+    }
+
+    @Test void combinedBundleIsReproducibleAcrossTimezonesAndFileTimestamps() {
+        def component = publication('matrix-all', 'jar', ['matrix-all-1.pom', 'matrix-all-1.jar', 'matrix-all-1.module'])
+        List<File> sources = []
+        component.files.each { String name ->
+            File source = new File(directory, "g/matrix-all/1/${name}")
+            source.parentFile.mkdirs()
+            source.text = name.endsWith('.pom') ? pomText('matrix-all', 'jar') : 'artifact fixture'
+            File signature = new File(source.path + '.asc')
+            signature.text = 'signature fixture'
+            sources.addAll([source, signature])
+        }
+        TimeZone original = TimeZone.default
+        try {
+            TimeZone.setDefault(TimeZone.getTimeZone('Pacific/Kiritimati'))
+            File first = new File(directory, 'first.zip')
+            CombinedBundle.create(directory, first, [component])
+            sources.each { assertTrue(it.setLastModified(1_000_000_000_000L)) }
+            component.files = component.files.reverse()
+            TimeZone.setDefault(TimeZone.getTimeZone('America/Los_Angeles'))
+            File second = new File(directory, 'second.zip')
+            CombinedBundle.create(directory, second, [component])
+            assertArrayEquals(first.bytes, second.bytes)
+            new ZipFile(second).withCloseable { archive ->
+                assertEquals(18, archive.size())
+                archive.entries().each { entry ->
+                    assertEquals(java.time.LocalDateTime.of(1980, 2, 1, 0, 0), entry.timeLocal)
+                    assertNull(entry.extra)
+                }
+            }
+        } finally { TimeZone.setDefault(original) }
     }
 
     @Test void listedModuleMetadataIsSignedAndUnsupportedFilesStillFail() {

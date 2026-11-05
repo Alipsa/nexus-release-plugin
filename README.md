@@ -27,7 +27,7 @@ plugins {
   // your other plugins...
    id 'signing'
    id 'maven-publish'
-   id 'se.alipsa.nexus-release-plugin' version '2.5.0'
+   id 'se.alipsa.nexus-release-plugin' version '2.5.1'
 }
 
 publishing {
@@ -113,7 +113,7 @@ Example build.gradle:
 plugins {
   id 'groovy'
   id 'maven-publish'
-  id 'se.alipsa.nexus-release-plugin' version '2.5.0'
+  id 'se.alipsa.nexus-release-plugin' version '2.5.1'
 }
 
 group = 'se.alipsa'
@@ -227,7 +227,7 @@ uses the modules' signing configuration and publishes only the eligible named pu
 
 ```groovy
 plugins {
-    id 'se.alipsa.nexus-release-plugin' version '2.5.0'
+    id 'se.alipsa.nexus-release-plugin' version '2.5.1'
 }
 
 nexusReleasePlugin {

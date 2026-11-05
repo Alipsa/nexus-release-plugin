@@ -259,6 +259,102 @@ if (gradle.startParameter.taskNames == ['help']) {
         }
     }
 
+    @Test void planAndConsumersCanShareAnInvocationAfterInitialPlanning() {
+        withServer { String base, List requests ->
+            fixture(base, "modules = [':core']")
+            run(':releaseAllPlan')
+            // Request consumers first to prove ordering is independent of CLI order.
+            def result = run(':bundleAll', ':releaseAllPrepareMaven', ':releaseAllPlan')
+            assertNotNull(result.task(':core:signMavenPublication'))
+            assertTrue(new File(root, 'build/releaseAll/bundle.zip').isFile())
+            List<String> tasks = result.tasks*.path
+            [':releaseAllSigningCheck', ':releaseAllGuard', ':releaseAllPrepareMaven', ':bundleAll'].each {
+                assertTrue(tasks.indexOf(':releaseAllPlan') < tasks.indexOf(it))
+            }
+            // Replanning updates the manifest configuration input; standalone bundles
+            // retain cache reuse once that saved manifest is stable.
+            run(':bundleAll')
+            assertTrue(run(':bundleAll').output.contains('Reusing configuration cache'))
+        }
+    }
+
+    @Test void changedSelectionCannotReuseStaleStagedArtifactsAfterReplanning() {
+        withServer { String base, List requests ->
+            fixture(base, "modules = [':api', ':core']")
+            run(':releaseAllPlan')
+            run(':bundleAll')
+            File stagedApi = new File(root, 'build/releaseAll/staging/example/api-artifact/1.0/api-artifact-1.0.jar')
+            byte[] staleBytes = stagedApi.bytes
+            File build = new File(root, 'build.gradle')
+            build.text = build.text.replace("modules = [':api', ':core']", "modules = [':core']")
+            commit()
+            run(':releaseAllPlan')
+            build.text = build.text.replace("modules = [':core']", "modules = [':api', ':core']")
+            new File(root, 'api/src/main/java/Api.java').text = '/** Updated. */ public class Api { public int value() { return 42; } }'
+            commit()
+            File zip = new File(root, 'build/releaseAll/bundle.zip')
+            File receipt = new File(root, 'build/releaseAll/bundle-receipt.json')
+            assertTrue(zip.delete())
+            assertTrue(receipt.delete())
+            def failed = runner(':releaseAllPlan', ':bundleAll').buildAndFail()
+            assertTrue(failed.output.contains('Manifest selection changed after staging was configured'))
+            assertTrue(failed.output.contains('configured modules/publications do not match the saved plan'))
+            assertNull(failed.task(':api:signMavenPublication'))
+            assertNull(failed.task(':api:check'))
+            assertArrayEquals(staleBytes, stagedApi.bytes)
+            assertFalse(zip.exists())
+            assertFalse(receipt.exists())
+            assertFalse(requests.any { it.contains('/publisher/upload') })
+            // A separate invocation configures staging from the new plan and repairs it.
+            run(':bundleAll')
+            assertFalse(Arrays.equals(staleBytes, stagedApi.bytes))
+            assertTrue(zip.isFile())
+        }
+    }
+
+    @Test void savedPublicationMismatchReportsTheSavedPlan() {
+        withServer { String base, List requests ->
+            fixture(base, "modules = [':core']")
+            run(':releaseAllPlan')
+            run(':bundleAll')
+            File manifestFile = new File(root, 'build/releaseAll/manifest.json')
+            Map manifest = ReleaseManifest.read(manifestFile)
+            manifest.selected.first().publication = 'previousPublication'
+            ReleaseManifest.write(manifestFile, manifest)
+            def failed = runner(':bundleAll').buildAndFail()
+            assertTrue(failed.output.contains('configured modules/publications do not match the saved plan'))
+            assertNull(failed.task(':core:signMavenPublication'))
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = ['releaseAllPlan', ':releaseAllPlan', 'releaseAllPl', 'fullRelease'])
+    void planningAndUploadingTogetherFailsBeforeAnyTaskRuns(String request) {
+        withServer { String base, List requests ->
+            fixture(base, "modules = [':core']")
+            new File(root, 'build.gradle') << "\ntasks.register('fullRelease') { dependsOn 'releaseAllPlan', 'releaseAll' }\n"
+            commit()
+            run(':releaseAllPlan')
+            run(':bundleAll')
+            List<File> saved = ['manifest.json', 'bundle.zip', 'bundle-receipt.json'].collect {
+                new File(root, 'build/releaseAll/' + it)
+            }
+            List<byte[]> original = saved.collect { it.bytes }
+            requests.clear()
+            String[] flags = request == 'fullRelease' ? [] as String[] : [':releaseAll'] as String[]
+            // A rejected graph must not be reused to bypass validation on a retry.
+            2.times {
+                def failed = runner(request, *flags).buildAndFail()
+                assertTrue(failed.output.contains('Do not request releaseAllPlan and releaseAll in the same invocation; review the saved manifest'))
+                assertTrue(failed.tasks.empty, 'No planning, checking, signing, staging, or bundling task may run')
+                saved.eachWithIndex { File file, int index -> assertArrayEquals(original[index], file.bytes) }
+                assertFalse(new File(root, 'build/releaseAll/deployment.json').exists())
+                assertTrue(requests.empty, 'No Portal or repository request may run')
+                assertFalse(failed.output.contains('Reusing configuration cache'), failed.output)
+            }
+        }
+    }
+
     @Test void omittedUnpublishedSiblingBlocksConsumerAcrossNamespacesAndCompileOnlyEdges() {
         withServer { String base, List requests ->
             fixture(base, "modules = [':api']; unpublishedProjectDependencies = [':core']", true)

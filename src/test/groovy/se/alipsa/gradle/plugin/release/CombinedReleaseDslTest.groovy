@@ -60,6 +60,11 @@ nexusReleasePlugin {
         [planTask, signingCheckTask, guardTask, prepareMavenTask, bundleAllTask, releaseAllTask].each {
             assert it.get().manifestFile.get().asFile == manifestFile.get().asFile
         }
+        [signingCheckTask, guardTask, prepareMavenTask, bundleAllTask].each {
+            def consumer = it.get()
+            assert consumer.mustRunAfter.getDependencies(consumer).contains(planTask.get())
+            assert !consumer.taskDependencies.getDependencies(consumer).contains(planTask.get())
+        }
         [planTask, guardTask, prepareMavenTask, bundleAllTask, releaseAllTask].each {
             assert it.get().sourceDirectory.get().asFile == sourceDirectory.get().asFile
         }
