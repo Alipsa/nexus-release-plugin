@@ -58,7 +58,6 @@ final class CombinedReleaseRegistrar {
         TaskProvider<ReleaseAllTask> releaseAllTask = tasks.register('releaseAll', ReleaseAllTask) { ReleaseAllTask task ->
             task.sourceDirectory.convention(shared.sourceDirectory)
             task.manifestFile.convention(shared.manifestFile)
-            task.mustRunAfter(planTask)
             task.bundleFile.convention(shared.bundleFile)
             task.receiptFile.convention(shared.receiptFile)
             task.recordFile.convention(shared.recordFile)

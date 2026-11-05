@@ -203,9 +203,9 @@ tasks.named('releaseAllPlan') {
 ```
 
 Run discovery in a separate invocation before configuring staging dependencies from the
-saved manifest. All five manifest consumers declare `mustRunAfter(releaseAllPlan)`, so
-requesting the planner and consumers together respects that order and passes Gradle's
-task-dependency validation. This ordering does not schedule planning automatically:
+saved manifest. The signing check, source guard, Maven preparation, and bundle tasks
+declare `mustRunAfter(releaseAllPlan)`, so requesting the planner and these consumers
+together respects that order and passes Gradle's task-dependency validation. This ordering does not schedule planning automatically:
 standalone consumers use the reviewed saved manifest, and resume does not run the planner.
 A resolved graph containing both `releaseAllPlan` and `releaseAll` is rejected before
 planning, checks, signing, staging, bundling, or upload can run. Existing manifests,
