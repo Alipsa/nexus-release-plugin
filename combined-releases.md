@@ -119,7 +119,8 @@ work when the plan contains no selected static Maven components.
 
 Defaults in module mode are the root project as `sourceDirectory` and these paths under
 the root build directory: `releaseAll/manifest.json`, `releaseAll/staging`,
-`releaseAll/bundle.zip`, `releaseAll/bundle-receipt.json`, and `releaseAll/deployment.json`.
+`releaseAll/<root project name>-mega-bundle.zip`, `releaseAll/bundle-receipt.json`,
+and `releaseAll/deployment.json`.
 The existing shared properties override these conventions. Repository/Portal URLs and
 credentials use the shared conventions below. Configure module selection and opt-outs in
 the root build script. Both lists are finalized after all projects are evaluated in default

@@ -1,5 +1,11 @@
 # Release history
 
+## Ver 2.6.0 (in progress)
+- Change the default combined-release bundle name from `bundle.zip` to
+  `<root project name>-mega-bundle.zip` (e.g. `jmlx-mega-bundle.zip`), which is
+  also used as the Central Portal deployment name. Override with
+  `combinedRelease { bundleFile = ... }` as before.
+
 ## Ver 2.5.1, 2026-11-05
 - Fix #11: use fixed, timezone-independent timestamps for all combined ZIP entries; document per-run receipt hashes and signing limits.
 - Fix #12: order manifest consumers after `releaseAllPlan` when scheduled together. Reject changed selections before bundling stale staging files, and reject resolved task graphs containing both planning and upload before any tasks run so the saved manifest can be reviewed. Preserve separate initial planning and status-only resume.
