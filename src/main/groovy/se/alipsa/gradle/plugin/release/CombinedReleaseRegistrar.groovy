@@ -67,6 +67,7 @@ final class CombinedReleaseRegistrar {
             task.password.convention(shared.password)
             task.portalFixture.convention(shared.portalFixture)
             task.resumeId.convention('')
+            task.useExistingBundle.convention(false)
         }
         // Inspect resolved paths without realizing tasks. Reject before any task actions,
         // including when planning is scheduled through dependencies or abbreviations.

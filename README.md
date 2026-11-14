@@ -289,3 +289,11 @@ Bundles use Maven coordinate names and include all artifacts of the selected pub
 The selected publication's module metadata and adjacent signature are cleared before metadata generation, including plain `publishToMavenLocal`, publishing to other repositories, and snapshots. Metadata regenerates or restores from cache. Deleting its signature forces the publication signing task to re-sign every artifact; gpg-agent/pinentry may prompt on every publish even when signing previously stayed up to date. Disable generation with `enabled = false` to omit metadata. Skipping it with `onlyIf` while the POM advertises metadata fails before upload.
 
 The publishing-script harness runs as part of `check` when Bash is available. Local builds without Bash skip it with a reason; CI requires it with `-PrequireShellHarness=true`.
+
+### Upload a verified combined bundle
+
+After planning and `bundleAll`, configure `releaseAll { useExistingBundle = true }` to
+submit the saved ZIP without rebuilding, signing or staging it again. Source/version and
+saved manifest/receipt hashes are rechecked before availability probes and upload. Consumers
+must bind additional integration evidence to this exact ZIP digest before invoking the task.
+Resume remains status-only and does not require current build outputs.

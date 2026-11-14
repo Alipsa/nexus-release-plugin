@@ -523,6 +523,40 @@ nexusReleasePlugin {
         new File(root, 'core/build.gradle').text = "plugins { id 'java-library' }\ngroup = 'internal'; version = '1.0'\n"
     }
 
+    @Test void existingBundleUploadsWithoutRebuilding() {
+        withServer([] as Set, ['example:core-artifact:1.0'] as Set) { String base, List requests, List bodies, List rawBodies ->
+            fixture(base, "modules = [':core']")
+            new File(root, 'build.gradle') << "\nreleaseAll { useExistingBundle = providers.gradleProperty('existing').isPresent() }\n"
+            commit()
+            run('releaseAllPlan')
+            run('bundleAll')
+            byte[] original = new File(root, BUNDLE).bytes
+            def result = run('releaseAll', '-Pexisting')
+            assertNull(result.task(':bundleAll'))
+            assertNull(result.task(':core:jar'))
+            assertNull(result.task(':core:check'))
+            assertNotNull(result.task(':releaseAllGuard'))
+            assertArrayEquals(original, new File(root, BUNDLE).bytes)
+            assertTrue(requests.any { it.contains('/publisher/upload') })
+            assertTrue(rawBodies.any { byte[] body -> Collections.indexOfSubList(body.toList(), original.toList()) >= 0 })
+        }
+    }
+
+    @Test void existingBundleRejectsTamperingWithoutUpload() {
+        withServer { String base, List requests ->
+            fixture(base, "modules = [':core']")
+            new File(root, 'build.gradle') << "\nreleaseAll { useExistingBundle = providers.gradleProperty('existing').isPresent() }\n"
+            commit()
+            run('releaseAllPlan')
+            run('bundleAll')
+            new File(root, BUNDLE) << 'changed'
+            def failed = runner('releaseAll', '-Pexisting').buildAndFail()
+            assertNull(failed.task(':bundleAll'))
+            assertTrue(failed.output.contains('Bundle or manifest changed since validation'))
+            assertFalse(requests.any { it.contains('/publisher/upload') })
+        }
+    }
+
     private void fixture(String base, String selection, boolean compileOnly = false, boolean signingKeys = true) {
         new File(root, 'settings.gradle').text = "rootProject.name='module-release-fixture'\ninclude 'core', 'api', 'unused'\n"
         new File(root, '.gitignore').text = 'build/\n.gradle/\n'
@@ -591,6 +625,7 @@ ${name == 'api' ? "dependencies { ${compileOnly ? 'compileOnly' : 'api'} project
     private void withServer(Set<String> published, boolean captureBodies, Set<String> deployedOnUpload, Closure action) {
         List<String> requests = Collections.synchronizedList([])
         List<String> bodies = Collections.synchronizedList([])
+        List<byte[]> rawBodies = Collections.synchronizedList([])
         def server = HttpServer.create(new InetSocketAddress('127.0.0.1', 0), 0)
         server.createContext('/') { exchange ->
             requests.add(exchange.requestURI.toString())
@@ -602,14 +637,22 @@ ${name == 'api' ? "dependencies { ${compileOnly ? 'compileOnly' : 'api'} project
                 exchange.requestURI.path.endsWith("/${group.replace('.', '/')}/${name}/${version}/${name}-${version}.pom") ||
                     exchange.requestURI.path.endsWith("/${group.replace('.', '/')}/${name}/${version}/${name}-${version}.jar")
             }
-            if (captureBodies) bodies.add(new String(exchange.requestBody.readAllBytes(), 'UTF-8'))
+            if (captureBodies) {
+                byte[] raw = exchange.requestBody.readAllBytes()
+                rawBodies.add(raw)
+                bodies.add(new String(raw, 'UTF-8'))
+            }
             if (upload) published.addAll(deployedOnUpload)
             byte[] body = (status ? '{"deploymentState":"PUBLISHED"}' : portal ? '{"published":false}' : upload ? 'upload-deployment-id' : '').getBytes('UTF-8')
             exchange.sendResponseHeaders(portal || status || upload || released ? 200 : 404, exchange.requestMethod == 'HEAD' ? -1 : body.length)
             exchange.responseBody.withCloseable { it.write(body) }
         }
         server.start()
-        try { action("http://127.0.0.1:${server.address.port}".toString(), requests, bodies) }
+        try {
+            String base = "http://127.0.0.1:${server.address.port}".toString()
+            if (action.maximumNumberOfParameters == 4) action(base, requests, bodies, rawBodies)
+            else action(base, requests, bodies)
+        }
         finally { server.stop(0) }
     }
 

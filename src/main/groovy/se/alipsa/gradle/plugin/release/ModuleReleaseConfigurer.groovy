@@ -82,7 +82,9 @@ final class ModuleReleaseConfigurer {
             task.wiredSelection.set(staging.map { it.selection })
         }
         extension.releaseAllTask.configure { task ->
-            if (!task.resumeId.getOrElse('')) task.dependsOn(extension.bundleAllTask)
+            if (!task.resumeId.getOrElse('')) {
+                task.dependsOn(task.useExistingBundle.get() ? extension.guardTask : extension.bundleAllTask)
+            }
         }
     }
 

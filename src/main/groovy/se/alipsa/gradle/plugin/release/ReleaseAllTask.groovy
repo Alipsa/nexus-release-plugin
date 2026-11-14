@@ -21,6 +21,8 @@ abstract class ReleaseAllTask extends DefaultTask {
     @Input abstract Property<String> getPortalUrl()
     @Input abstract Property<String> getRepositoryUrl()
     @Input abstract Property<String> getResumeId()
+    /** Upload the saved, verified ZIP without scheduling bundleAll. */
+    @Input abstract Property<Boolean> getUseExistingBundle()
 
     /** Checks source and availability before submitting, or resumes without building. */
     @TaskAction
