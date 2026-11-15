@@ -265,7 +265,7 @@ if (gradle.startParameter.taskNames == ['help']) {
     @Test
     @Timeout(120)
     void consumerConfiguredBundleFileOverridesTheModuleModeDefault() {
-        withServer(Collections.synchronizedSet([] as Set), ['example:core-artifact:1.0'] as Set) { String base, List requests, List bodies ->
+        withServer(Collections.synchronizedSet([] as Set), ['example:core-artifact:1.0'] as Set) { String base, List requests, List rawBodies ->
             fixture(base, "modules = [':core']; bundleFile = layout.buildDirectory.file('custom/my-bundle.zip')")
             run('releaseAllPlan')
             run(':bundleAll')
@@ -273,8 +273,8 @@ if (gradle.startParameter.taskNames == ['help']) {
             assertFalse(new File(root, BUNDLE).exists())
             run(':releaseAll')
             assertTrue(requests.any { it.contains('/publisher/upload') })
-            assertTrue(bodies.any { it.contains('filename="my-bundle.zip"') },
-                { -> "upload should use my-bundle.zip; Content-Disposition lines: ${bodies*.readLines().flatten().findAll { it.startsWith('Content-Disposition') }}" } as java.util.function.Supplier)
+            assertTrue(rawBodies.any { new String(it as byte[], 'UTF-8').contains('filename="my-bundle.zip"') },
+                { -> "upload should use my-bundle.zip; Content-Disposition lines: ${rawBodies.collect { new String(it as byte[], 'UTF-8') }*.readLines().flatten().findAll { it.startsWith('Content-Disposition') }}" } as java.util.function.Supplier)
         }
     }
 
@@ -506,7 +506,7 @@ nexusReleasePlugin {
     void resumeOnlyUsesSavedDeploymentWithoutModulePreparation(boolean configureOnDemand) {
         withServer(['example:api-artifact:1.0'] as Set) { String base, List requests ->
             fixture(base, "modules = [':missing']")
-            new File(root, 'build.gradle') << "\nreleaseAll { resumeId = 'saved-id' }\n"
+            new File(root, 'build.gradle') << "\nreleaseAll { resumeId = 'saved-id'; useExistingBundle = true; expectedBundleSha256 = 'ignored-during-resume'; expectedManifestSha256 = 'also-ignored' }\n"
             new File(root, 'build.gradle') << '\ntasks.all { }\n'
             if (configureOnDemand) new File(root, 'unused/build.gradle').text = "throw new GradleException('Resume configured an unrelated project')"
             ReleaseManifest.write(new File(root, 'build/releaseAll/deployment.json'), [deploymentId: 'saved-id', state: 'UPLOADED',
@@ -521,6 +521,221 @@ nexusReleasePlugin {
 
     private void makeCoreInternal() {
         new File(root, 'core/build.gradle').text = "plugins { id 'java-library' }\ngroup = 'internal'; version = '1.0'\n"
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = [false, true])
+    void existingBundleUploadsWithoutRebuilding(boolean uppercase) {
+        withServer([] as Set, ['example:core-artifact:1.0'] as Set) { String base, List requests, List rawBodies ->
+            fixture(base, "modules = [':core']")
+            new File(root, 'build.gradle') << "\nreleaseAll { useExistingBundle = providers.gradleProperty('existing').isPresent(); expectedBundleSha256 = providers.gradleProperty('expected'); expectedManifestSha256 = providers.gradleProperty('expectedManifest') }\n"
+            commit()
+            run('releaseAllPlan')
+            run('bundleAll')
+            byte[] original = new File(root, BUNDLE).bytes
+            String bundleHash = ReleaseChecksums.checksum(new File(root, BUNDLE), 'SHA-256')
+            String manifestHash = ReleaseChecksums.checksum(new File(root, 'build/releaseAll/manifest.json'), 'SHA-256')
+            def result = run('releaseAll', '-Pexisting', '-Pexpected=' + (uppercase ? bundleHash.toUpperCase(Locale.ROOT) : bundleHash),
+                '-PexpectedManifest=' + (uppercase ? manifestHash.toUpperCase(Locale.ROOT) : manifestHash))
+            assertNull(result.task(':bundleAll'))
+            assertNull(result.task(':core:jar'))
+            assertNull(result.task(':core:check'))
+            assertNotNull(result.task(':releaseAllGuard'))
+            assertArrayEquals(original, new File(root, BUNDLE).bytes)
+            assertTrue(requests.any { it.contains('/publisher/upload') })
+            assertTrue(rawBodies.findAll { it.length > 0 }.any { byte[] body -> Arrays.equals(multipartFile(body), original) })
+        }
+    }
+
+    @Test void existingBundleRejectsTamperingWithoutUpload() {
+        withServer { String base, List requests ->
+            fixture(base, "modules = [':core']")
+            new File(root, 'build.gradle') << "\nreleaseAll { useExistingBundle = providers.gradleProperty('existing').isPresent(); expectedBundleSha256 = providers.gradleProperty('expected'); expectedManifestSha256 = providers.gradleProperty('expectedManifest') }\n"
+            commit()
+            run('releaseAllPlan')
+            run('bundleAll')
+            String expected = ReleaseChecksums.checksum(new File(root, BUNDLE), 'SHA-256')
+            String expectedManifest = ReleaseChecksums.checksum(new File(root, 'build/releaseAll/manifest.json'), 'SHA-256')
+            new File(root, BUNDLE) << 'changed'
+            def failed = runner('releaseAll', '-Pexisting', '-Pexpected=' + expected, '-PexpectedManifest=' + expectedManifest).buildAndFail()
+            assertNull(failed.task(':bundleAll'))
+            assertTrue(failed.output.contains('differs from expectedBundleSha256'))
+            assertFalse(requests.any { it.contains('/publisher/upload') })
+        }
+    }
+
+    /** The fixture server receives one file part; ISO-8859-1 preserves byte offsets. */
+    private static byte[] multipartFile(byte[] body) {
+        String text = new String(body, java.nio.charset.StandardCharsets.ISO_8859_1)
+        int headerEnd = text.indexOf('\r\n\r\n')
+        assertTrue(headerEnd >= 0)
+        String boundary = text.substring(0, text.indexOf('\r\n'))
+        int end = text.lastIndexOf('\r\n' + boundary + '--\r\n')
+        assertTrue(end >= headerEnd + 4)
+        Arrays.copyOfRange(body, headerEnd + 4, end)
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = ['dirty', 'commit', 'manifest', 'replan', 'missing-receipt', 'missing-zip', 'rewritten-receipt', 'rewritten-manifest-receipt', 'guard-manifest'])
+    void existingBundleRejectsDriftAndMissingFiles(String change) {
+        withServer { String base, List requests ->
+            existingFixture(base)
+            run('releaseAllPlan')
+            run('bundleAll')
+            String expected = ReleaseChecksums.checksum(new File(root, BUNDLE), 'SHA-256')
+            String expectedManifest = ReleaseChecksums.checksum(new File(root, 'build/releaseAll/manifest.json'), 'SHA-256')
+            switch (change) {
+                case 'dirty': new File(root, 'core/src/main/java/Core.java') << '\n// changed'; break
+                case 'commit':
+                    new File(root, 'core/src/main/java/Core.java') << '\n// changed'
+                    commit(); break
+                case 'manifest': new File(root, 'build/releaseAll/manifest.json') << '\n'; break
+                case 'replan':
+                    new File(root, 'core/src/main/java/Core.java') << '\n// changed'
+                    commit()
+                    run('releaseAllPlan'); break
+                case 'missing-receipt': assertTrue(new File(root, 'build/releaseAll/bundle-receipt.json').delete()); break
+                case 'missing-zip': assertTrue(new File(root, BUNDLE).delete()); break
+                case 'guard-manifest':
+                    File guardManifestFile = new File(root, 'build/releaseAll/manifest.json')
+                    Map guardManifest = ReleaseManifest.read(guardManifestFile)
+                    guardManifest.modulePaths = [':replaced']
+                    guardManifest.revision = 'replaced'
+                    ReleaseManifest.write(guardManifestFile, guardManifest)
+                    break
+                case 'rewritten-manifest-receipt':
+                    // Bypass the mutable source/selection guard and update its mutable receipt.
+                    new File(root, 'core/src/main/java/Core.java') << '\n// changed'
+                    commit()
+                    File manifestFile = new File(root, 'build/releaseAll/manifest.json')
+                    Map manifest = ReleaseManifest.read(manifestFile)
+                    manifest.revision = ReleaseManifest.git(root, 'rev-parse', 'HEAD')
+                    manifest.selected = []
+                    ReleaseManifest.write(manifestFile, manifest)
+                    File manifestReceiptFile = new File(root, 'build/releaseAll/bundle-receipt.json')
+                    Map manifestReceipt = ReleaseManifest.read(manifestReceiptFile)
+                    manifestReceipt.manifestHash = ReleaseChecksums.checksum(manifestFile, 'SHA-256')
+                    ReleaseManifest.write(manifestReceiptFile, manifestReceipt)
+                    break
+                case 'rewritten-receipt':
+                    new File(root, BUNDLE) << 'changed'
+                    File receiptFile = new File(root, 'build/releaseAll/bundle-receipt.json')
+                    Map receipt = ReleaseManifest.read(receiptFile)
+                    receipt.bundleHash = ReleaseChecksums.checksum(new File(root, BUNDLE), 'SHA-256')
+                    ReleaseManifest.write(receiptFile, receipt)
+            }
+            def failed = runner('releaseAll', '-Pexisting', '-Pexpected=' + expected, '-PexpectedManifest=' + expectedManifest).buildAndFail()
+            String message = change in ['dirty', 'commit'] ? 'Stale manifest' :
+                change.startsWith('missing-') ? 'Prepared release file missing' :
+                change == 'rewritten-receipt' ? 'differs from expectedBundleSha256' : 'differs from expectedManifestSha256'
+            assertTrue(failed.output.contains(message), failed.output)
+            assertNull(failed.task(':bundleAll'))
+            assertFalse(requests.any { it.contains('/publisher/upload') })
+        }
+    }
+
+    @Test void existingBundleRequiresReviewedDigestAndPriorBundle() {
+        withServer { String base, List requests ->
+            existingFixture(base)
+            run('releaseAllPlan')
+            def missingDigest = runner('releaseAll', '-Pexisting').buildAndFail()
+            assertTrue(missingDigest.output.contains('requires expectedBundleSha256'))
+            def missingBundle = runner('releaseAll', '-Pexisting', '-Pexpected=' + ('0' * 64),
+                '-PexpectedManifest=' + ReleaseChecksums.checksum(new File(root, 'build/releaseAll/manifest.json'), 'SHA-256')).buildAndFail()
+            assertTrue(missingBundle.output.contains('Prepared release file missing'))
+            assertFalse(requests.any { it.contains('/publisher/upload') })
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = ['bundleAll', 'releaseAll', 'dependency'])
+    void existingBundleRejectsBundlingInTheUploadGraph(String first) {
+        withServer { String base, List requests ->
+            existingFixture(base)
+            run('releaseAllPlan')
+            if (first == 'dependency') {
+                new File(root, 'build.gradle') << "\ntasks.register('consumer') { dependsOn bundleAll }\n"
+                commit()
+            }
+            String second = first == 'bundleAll' ? 'releaseAll' : first == 'dependency' ? 'releaseAll' : 'bundleAll'
+            if (first == 'dependency') first = 'consumer'
+            def failed = runner(first, second, '-Pexisting', '-Pexpected=' + ('0' * 64), '-PexpectedManifest=' + ('0' * 64)).buildAndFail()
+            assertTrue(failed.output.contains('Do not request bundleAll and releaseAll'))
+            assertTrue(failed.tasks.empty)
+            assertFalse(requests.any { it.contains('/publisher/upload') })
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = ['bundle-malformed', 'manifest-malformed', 'manifest-missing', 'bundle-normal', 'manifest-normal', 'malformed-normal'])
+    void evidenceInputErrorsFailBeforeAnyTask(String scenario) {
+        withServer { String base, List requests ->
+            existingFixture(base)
+            String valid = 'a' * 64
+            List<String> args = ['-Pexpected=' + valid, '-PexpectedManifest=' + valid]
+            if (scenario.endsWith('normal')) {
+                args = scenario == 'manifest-normal' ? ['-PexpectedManifest=' + valid] :
+                    ['-Pexpected=' + (scenario == 'malformed-normal' ? 'oops' : valid)]
+            } else {
+                args.add('-Pexisting')
+                if (scenario == 'manifest-missing') args.remove('-PexpectedManifest=' + valid)
+                else if (scenario == 'bundle-malformed') args[0] = '-Pexpected=' + ('z' * 64)
+                else args[1] = '-PexpectedManifest=123'
+            }
+            // No plan/bundle exists: input validation must win before preparation or source guards.
+            def failed = runner('releaseAll', *args).buildAndFail()
+            String message = scenario == 'manifest-missing' ? 'requires expectedManifestSha256' :
+                scenario in ['bundle-normal', 'manifest-normal'] ? 'supported only in existing-bundle mode' :
+                'must be a 64-character hexadecimal SHA-256'
+            assertTrue(failed.output.contains(message), failed.output)
+            assertTrue(failed.tasks.empty)
+            assertTrue(requests.empty)
+        }
+    }
+
+    @Test void normalUploadMissingFileExplainsPathMismatch() {
+        withServer { String base, List requests ->
+            fixture(base, "modules = [':core']")
+            new File(root, 'build.gradle') << "\nreleaseAll { receiptFile = layout.buildDirectory.file('missing-receipt.json') }\n"
+            commit()
+            run('releaseAllPlan')
+            def failed = runner('releaseAll').buildAndFail()
+            assertTrue(failed.output.contains('check that releaseAll and bundleAll use the same'))
+            assertFalse(failed.output.contains('before existing-bundle upload'))
+            assertFalse(requests.any { it.contains('/publisher/upload') })
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = ['bundleAll', 'releaseAllSigningCheck', 'releaseAllGuard', ':core:check'])
+    void nonUploadGraphsIgnoreExportedUploadEvidence(String task) {
+        withServer { String base, List requests ->
+            existingFixture(base)
+            run('releaseAllPlan')
+            String[] args = ['-Pexisting', '-Pexpected=not-an-upload-digest', '-PexpectedManifest=not-a-manifest-digest']
+            def first = run(task, *args)
+            assertNull(first.task(':releaseAll'))
+            def cached = run(task, *args)
+            assertNull(cached.task(':releaseAll'))
+            assertTrue(cached.output.contains('Reusing configuration cache.'))
+            assertFalse(requests.any { it.contains('/publisher/upload') })
+        }
+    }
+
+    @Test void absentExistingBundleProviderDefaultsToNormalBuild() {
+        withServer([] as Set, ['example:core-artifact:1.0'] as Set) { String base, List requests, List rawBodies ->
+            fixture(base, "modules = [':core']")
+            new File(root, 'build.gradle') << "\nreleaseAll { useExistingBundle = providers.gradleProperty('existing').map { it.toBoolean() } }\n"
+            commit()
+            run('releaseAllPlan')
+            assertNotNull(run('releaseAll').task(':bundleAll'))
+        }
+    }
+
+    private void existingFixture(String base) {
+        fixture(base, "modules = [':core']")
+        new File(root, 'build.gradle') << "\nreleaseAll { useExistingBundle = providers.gradleProperty('existing').isPresent(); expectedBundleSha256 = providers.gradleProperty('expected'); expectedManifestSha256 = providers.gradleProperty('expectedManifest') }\n"
+        commit()
     }
 
     private void fixture(String base, String selection, boolean compileOnly = false, boolean signingKeys = true) {
@@ -579,7 +794,7 @@ ${name == 'api' ? "dependencies { ${compileOnly ? 'compileOnly' : 'api'} project
     }
 
     private void withServer(Set<String> published = [] as Set, Closure action) {
-        withServer(published, false, [] as Set) { String base, List requests, List bodies -> action(base, requests) }
+        withServer(published, false, [] as Set) { String base, List requests, List rawBodies -> action(base, requests) }
     }
 
     /** Variant for full upload flows: captures bodies, answers uploads, and marks the given coordinates
@@ -590,7 +805,7 @@ ${name == 'api' ? "dependencies { ${compileOnly ? 'compileOnly' : 'api'} project
 
     private void withServer(Set<String> published, boolean captureBodies, Set<String> deployedOnUpload, Closure action) {
         List<String> requests = Collections.synchronizedList([])
-        List<String> bodies = Collections.synchronizedList([])
+        List<byte[]> rawBodies = Collections.synchronizedList([])
         def server = HttpServer.create(new InetSocketAddress('127.0.0.1', 0), 0)
         server.createContext('/') { exchange ->
             requests.add(exchange.requestURI.toString())
@@ -602,14 +817,20 @@ ${name == 'api' ? "dependencies { ${compileOnly ? 'compileOnly' : 'api'} project
                 exchange.requestURI.path.endsWith("/${group.replace('.', '/')}/${name}/${version}/${name}-${version}.pom") ||
                     exchange.requestURI.path.endsWith("/${group.replace('.', '/')}/${name}/${version}/${name}-${version}.jar")
             }
-            if (captureBodies) bodies.add(new String(exchange.requestBody.readAllBytes(), 'UTF-8'))
+            if (captureBodies) {
+                byte[] raw = exchange.requestBody.readAllBytes()
+                rawBodies.add(raw)
+            }
             if (upload) published.addAll(deployedOnUpload)
             byte[] body = (status ? '{"deploymentState":"PUBLISHED"}' : portal ? '{"published":false}' : upload ? 'upload-deployment-id' : '').getBytes('UTF-8')
             exchange.sendResponseHeaders(portal || status || upload || released ? 200 : 404, exchange.requestMethod == 'HEAD' ? -1 : body.length)
             exchange.responseBody.withCloseable { it.write(body) }
         }
         server.start()
-        try { action("http://127.0.0.1:${server.address.port}".toString(), requests, bodies) }
+        try {
+            String base = "http://127.0.0.1:${server.address.port}".toString()
+            action(base, requests, rawBodies)
+        }
         finally { server.stop(0) }
     }
 

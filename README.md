@@ -289,3 +289,54 @@ Bundles use Maven coordinate names and include all artifacts of the selected pub
 The selected publication's module metadata and adjacent signature are cleared before metadata generation, including plain `publishToMavenLocal`, publishing to other repositories, and snapshots. Metadata regenerates or restores from cache. Deleting its signature forces the publication signing task to re-sign every artifact; gpg-agent/pinentry may prompt on every publish even when signing previously stayed up to date. Disable generation with `enabled = false` to omit metadata. Skipping it with `onlyIf` while the POM advertises metadata fails before upload.
 
 The publishing-script harness runs as part of `check` when Bash is available. Local builds without Bash skip it with a reason; CI requires it with `-PrequireShellHarness=true`.
+
+### Upload a verified combined bundle
+
+Run planning and `bundleAll` separately from the upload invocation. After testing and
+reviewing the saved ZIP, configure the upload task with the ZIP and manifest SHA-256 values
+from retained, reviewed evidence:
+
+```groovy
+releaseAll {
+    useExistingBundle = providers.gradleProperty('existing').isPresent()
+    expectedBundleSha256 = providers.gradleProperty('verifiedBundleSha256')
+    expectedManifestSha256 = providers.gradleProperty('verifiedManifestSha256')
+}
+```
+
+Then run:
+
+```sh
+./gradlew releaseAll -Pexisting \
+  -PverifiedBundleSha256="$REVIEWED_BUNDLE_SHA256" \
+  -PverifiedManifestSha256="$REVIEWED_MANIFEST_SHA256"
+```
+
+This submits without rebuilding, signing or staging again. Existing-bundle mode requires
+both digests; do not derive them from the mutable receipt at upload time. Each must match
+both its receipt entry and the corresponding file. The verified manifest controls the
+coordinates probed before upload and during polling in that upload invocation, so review
+and retain it with the ZIP. A later resume trusts the manifest copy in `deployment.json`;
+it ignores the reviewed digests and does not authenticate that journal copy. Protect the
+retained journal from modification.
+
+Digest presence and syntax are validated before any task runs. Digests are accepted only
+in existing-bundle mode: normal uploads rebuild and re-sign artifacts, so an earlier ZIP's
+digest generally cannot match. Digest properties also come from project/user
+`gradle.properties` and `ORG_GRADLE_PROJECT_*` environment variables; remove or clear them
+before a normal release. Upload evidence is ignored when `releaseAll` is absent from the
+task graph, including plain checks, signing checks and bundle-only runs. Source/version
+and saved manifest hashes are rechecked.
+
+The uploader hashes and parses the same manifest bytes, and sends a private ZIP snapshot
+checked against the verified digest. The bundle directory must be writable for snapshot
+creation. Snapshots live beside the bundle, independently of the deployment journal
+location. Cleanup failures emit a warning naming the path for manual removal after the
+upload has stopped; after a process crash, remove leftover `.verified-upload-*`
+directories there once no upload is running.
+
+Requesting `bundleAll` and `releaseAll` together in existing-bundle mode is rejected,
+including through task dependencies. `useExistingBundle` defaults to false, including
+when assigned a provider with no value. When `resumeId` is set, resume takes priority:
+`useExistingBundle`, `expectedBundleSha256` and `expectedManifestSha256` are ignored.
+Resume remains status-only and does not require current build outputs.

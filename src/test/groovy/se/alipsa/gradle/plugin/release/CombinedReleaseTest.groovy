@@ -292,6 +292,96 @@ class CombinedReleaseTest {
         assertEquals(1, uploads)
     }
 
+    @Test void changedBundleAfterVerificationCannotUpload() {
+        File record = new File(directory, 'deployment.json')
+        File bundle = new File(directory, 'bundle.zip'); bundle.text = 'verified'
+        String verifiedHash = ReleaseChecksums.checksum(bundle, 'SHA-256')
+        def availability = new PublicationStatus() {
+            @Override boolean published(ReleaseCoordinate coordinate, boolean both) {
+                bundle.text = 'changed during availability probe'
+                false
+            }
+        }
+        def client = new CentralPortalClient(org.gradle.api.logging.Logging.getLogger(CombinedReleaseTest), null, 'u', 'p') {
+            @Override String upload(File file) { fail('Changed bytes must never upload'); '' }
+        }
+        Map manifest = [selected: [[groupId: 'g', artifactId: 'a', version: '1']]]
+        def failure = assertThrows(IllegalStateException) {
+            CombinedDeployment.submit(record, bundle, manifest, availability, client, verifiedHash)
+        }
+        assertTrue(failure.message.contains('Bundle changed after verification'))
+        assertFalse(record.exists())
+        assertFalse(directory.listFiles().any { it.name.startsWith('.verified-upload-') })
+    }
+
+    @Test void uploadUsesVerifiedSnapshotEvenIfOriginalIsReplaced() {
+        File record = new File(directory, 'journal/deployment.json')
+        File bundle = new File(directory, 'bundles/bundle.zip'); bundle.parentFile.mkdirs(); bundle.text = 'verified'
+        String verifiedHash = ReleaseChecksums.checksum(bundle, 'SHA-256')
+        def client = new CentralPortalClient(org.gradle.api.logging.Logging.getLogger(CombinedReleaseTest), null, 'u', 'p') {
+            @Override String upload(File file) {
+                assertNotEquals(bundle.canonicalPath, file.canonicalPath)
+                assertEquals(bundle.name, file.name)
+                assertEquals(bundle.parentFile.canonicalPath, file.parentFile.parentFile.canonicalPath)
+                assertNotEquals(record.parentFile.canonicalPath, file.parentFile.parentFile.canonicalPath)
+                bundle.text = 'replaced before multipart reads'
+                assertEquals('verified', file.text)
+                assertEquals(verifiedHash, ReleaseChecksums.checksum(file, 'SHA-256'))
+                'saved-id'
+            }
+        }
+        Map state = CombinedDeployment.submit(record, bundle, [selected: []], new PublicationStatus(), client, verifiedHash)
+        assertEquals(verifiedHash, state.bundleHash)
+        assertEquals(verifiedHash, ReleaseManifest.read(record).bundleHash)
+        assertFalse(bundle.parentFile.listFiles().any { it.name.startsWith('.verified-upload-') })
+        assertFalse(record.parentFile.listFiles().any { it.name.startsWith('.verified-upload-') })
+        assertFalse(directory.listFiles().any { it.name.startsWith('.verified-upload-') })
+    }
+
+    @Test void snapshotCreationFailureExplainsWritableDirectoryRequirement() {
+        File record = new File(directory, 'deployment.json')
+        // A file as parent fails on every OS, including root-run tests where permissions do not.
+        // This exercises snapshot creation error handling without relying on a read-only directory.
+        File blockedDirectory = new File(directory, 'not-a-directory'); blockedDirectory.text = 'blocked'
+        File bundle = new File(blockedDirectory, 'bundle.zip')
+        def client = new CentralPortalClient(org.gradle.api.logging.Logging.getLogger(CombinedReleaseTest), null, 'u', 'p') {
+            @Override String upload(File file) { fail('Snapshot creation failure must never upload'); '' }
+        }
+        def failure = assertThrows(IllegalStateException) {
+            CombinedDeployment.submit(record, bundle, [selected: []], new PublicationStatus(), client)
+        }
+        assertTrue(failure.message.contains('place the reviewed ZIP in a writable directory'))
+        assertTrue(failure.message.contains('bundleFile'))
+        assertInstanceOf(IOException, failure.cause)
+        assertFalse(record.exists())
+    }
+
+    @Test void snapshotCopyFailureExplainsNoUploadAndCleansUp() {
+        File record = new File(directory, 'deployment.json')
+        File bundle = new File(directory, 'missing-bundle.zip')
+        def client = new CentralPortalClient(org.gradle.api.logging.Logging.getLogger(CombinedReleaseTest), null, 'u', 'p') {
+            @Override String upload(File file) { fail('Copy failure must never upload'); '' }
+        }
+        def failure = assertThrows(IllegalStateException) {
+            CombinedDeployment.submit(record, bundle, [selected: []], new PublicationStatus(), client)
+        }
+        assertTrue(failure.message.contains('ZIP is readable'))
+        assertTrue(failure.message.contains('sufficient free space and write access'))
+        assertTrue(failure.message.contains('No upload attempted'))
+        assertInstanceOf(IOException, failure.cause)
+        assertFalse(record.exists())
+        assertFalse(directory.listFiles().any { it.name.startsWith('.verified-upload-') })
+    }
+
+    @Test void byteAndFileChecksumsUseTheSameHexFormat() {
+        File file = new File(directory, 'evidence')
+        file.bytes = [0, 127, -128, -1] as byte[]
+        ['SHA-256', 'SHA-1', 'MD5'].each { String algorithm ->
+            assertEquals(ReleaseChecksums.checksum(file, algorithm), ReleaseChecksums.checksum(file.bytes, algorithm))
+            assertTrue(ReleaseChecksums.checksum(file.bytes, algorithm) ==~ /[0-9a-f]+/)
+        }
+    }
+
     @Test void failedDeploymentReportsEveryCoordinate() {
         File record = new File(directory, 'deployment.json')
         ReleaseManifest.write(record, [deploymentId: 'id', manifest: [selected: [[groupId: 'g', artifactId: 'a', version: '1']]]])

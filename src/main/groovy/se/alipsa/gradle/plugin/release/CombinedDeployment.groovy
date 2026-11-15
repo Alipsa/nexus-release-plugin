@@ -2,15 +2,47 @@ package se.alipsa.gradle.plugin.release
 
 /** One-attempt upload journaling and status-only recovery. */
 class CombinedDeployment {
+    private static final org.gradle.api.logging.Logger LOGGER = org.gradle.api.logging.Logging.getLogger(CombinedDeployment)
+
     /** Uploads once, persisting intent before HTTP and ID immediately after it. */
-    static Map submit(File record, File bundle, Map manifest, PublicationStatus availability, CentralPortalClient client) {
+    static Map submit(File record, File bundle, Map manifest, PublicationStatus availability, CentralPortalClient client, String verifiedBundleHash = '') {
         if (record.exists()) throw new IllegalStateException('Deployment record exists; resume or reconcile it before a new upload')
         manifest.selected.each { Map component ->
             if (availability.published(new ReleaseCoordinate(component.groupId, component.artifactId, component.version), true)) {
                 throw new IllegalStateException("Component was published since planning: ${component.artifactId}")
             }
         }
-        Map state = [state: 'SUBMITTING', bundleHash: ReleaseChecksums.checksum(bundle, 'SHA-256'),
+        // Upload a private snapshot: later writes to the original ZIP cannot change request bytes.
+        File uploadDirectory
+        try {
+            uploadDirectory = java.nio.file.Files.createTempDirectory(bundle.absoluteFile.parentFile.toPath(), '.verified-upload-').toFile()
+        } catch (IOException failure) {
+            throw new IllegalStateException("Cannot create a verified upload snapshot beside ${bundle.absolutePath}; place the reviewed ZIP in a writable directory and point bundleFile there. No upload attempted", failure)
+        }
+        File snapshot = new File(uploadDirectory, bundle.name)
+        try {
+            String uploadHash
+            try {
+                java.nio.file.Files.copy(bundle.toPath(), snapshot.toPath())
+                uploadHash = ReleaseChecksums.checksum(snapshot, 'SHA-256')
+            } catch (IOException failure) {
+                throw new IllegalStateException("Cannot copy or read the verified upload snapshot for ${bundle.absolutePath}; check that the ZIP is readable and its directory has sufficient free space and write access. No upload attempted", failure)
+            }
+            if (verifiedBundleHash && uploadHash != verifiedBundleHash) {
+                throw new IllegalStateException('Bundle changed after verification; no upload attempted')
+            }
+            return uploadSnapshot(record, snapshot, manifest, client, uploadHash)
+        } finally {
+            [snapshot, uploadDirectory].each { File temporary ->
+                if (temporary.exists() && !temporary.delete()) {
+                    LOGGER.warn("Could not remove verified upload temporary path {}; remove it manually after the upload has stopped", temporary.absolutePath)
+                }
+            }
+        }
+    }
+
+    private static Map uploadSnapshot(File record, File bundle, Map manifest, CentralPortalClient client, String uploadHash) {
+        Map state = [state: 'SUBMITTING', bundleHash: uploadHash,
                      manifest: manifest, created: java.time.Instant.now().toString()]
         // Reserve the active journal atomically: two local invocations must not both submit.
         record.parentFile.mkdirs()
