@@ -73,12 +73,17 @@ final class ModuleReleaseConfigurer {
             task.unpublishedProjectPaths.set(unpublishedPaths)
         }
 
+        extension.prepareMavenTask.configure { task ->
+            task.mustRunAfter(model.call().pomTasks)
+        }
+
         // Resolve only when bundling is scheduled, even if a consumer eagerly realizes tasks.
         // Finalization prevents repeated dependency queries from registering the repository twice.
         def staging = project.objects.mapProperty(String, Object)
         staging.set(project.providers.provider { stagingTasks(project, extension, paths) })
         staging.finalizeValueOnRead()
         extension.bundleAllTask.configure { task ->
+            task.mustRunAfter(extension.prepareMavenTask)
             task.dependsOn(extension.guardTask)
             task.dependsOn(extension.signingCheckTask)
             task.dependsOn(staging.map { it.tasks })

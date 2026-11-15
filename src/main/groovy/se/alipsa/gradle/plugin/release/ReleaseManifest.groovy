@@ -45,8 +45,14 @@ class ReleaseManifest {
         }
     }
 
-    /** Reads the persisted JSON manifest. */
-    static Map read(File file) { new JsonSlurper().parse(file) as Map }
+    /** Reads a complete snapshot, closing the file before parsing. */
+    static Map read(File file) {
+        // NIO opens Windows files with delete sharing, allowing an atomic replacement
+        // while a reader still holds the old file. JsonSlurper.parse(File) uses a
+        // FileInputStream, whose Windows handle prevents that replacement.
+        byte[] snapshot = java.nio.file.Files.readAllBytes(file.toPath())
+        new JsonSlurper().parse(snapshot, 'UTF-8') as Map
+    }
 
     /** Atomically replaces a JSON file in its output directory. */
     static void write(File file, Map value) {
@@ -54,7 +60,28 @@ class ReleaseManifest {
         File temporary = java.nio.file.Files.createTempFile(file.absoluteFile.parentFile.toPath(), file.name + '.', '.tmp').toFile()
         try {
             temporary.setText(JsonOutput.prettyPrint(JsonOutput.toJson(value)), 'UTF-8')
-            java.nio.file.Files.move(temporary.toPath(), file.toPath(), java.nio.file.StandardCopyOption.ATOMIC_MOVE, java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+            replaceAtomically(temporary.toPath(), file.toPath())
         } finally { temporary.delete() }
+    }
+
+    private static void replaceAtomically(java.nio.file.Path source, java.nio.file.Path target) {
+        for (int attempt = 0; ; attempt++) {
+            try {
+                java.nio.file.Files.move(source, target, java.nio.file.StandardCopyOption.ATOMIC_MOVE,
+                    java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+                return
+            } catch (java.nio.file.AccessDeniedException failure) {
+                // Windows can briefly deny replacement during another rename or an
+                // external read without delete sharing. Keep the old journal intact
+                // and retry only the atomic move, for at most 1.27 seconds in total.
+                if (attempt >= 7 || !System.getProperty('os.name').toLowerCase(Locale.ROOT).contains('windows')) throw failure
+                try {
+                    Thread.sleep(10L << attempt)
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt()
+                    throw interrupted
+                }
+            }
+        }
     }
 }

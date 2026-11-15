@@ -27,7 +27,7 @@ plugins {
   // your other plugins...
    id 'signing'
    id 'maven-publish'
-   id 'se.alipsa.nexus-release-plugin' version '2.5.1'
+   id 'se.alipsa.nexus-release-plugin' version '2.6.0'
 }
 
 publishing {
@@ -113,7 +113,7 @@ Example build.gradle:
 plugins {
   id 'groovy'
   id 'maven-publish'
-  id 'se.alipsa.nexus-release-plugin' version '2.5.1'
+  id 'se.alipsa.nexus-release-plugin' version '2.6.0'
 }
 
 group = 'se.alipsa'
@@ -227,7 +227,7 @@ uses the modules' signing configuration and publishes only the eligible named pu
 
 ```groovy
 plugins {
-    id 'se.alipsa.nexus-release-plugin' version '2.5.1'
+    id 'se.alipsa.nexus-release-plugin' version '2.6.0'
 }
 
 nexusReleasePlugin {
@@ -290,7 +290,7 @@ The selected publication's module metadata and adjacent signature are cleared be
 
 The publishing-script harness runs as part of `check` when Bash is available. Local builds without Bash skip it with a reason; CI requires it with `-PrequireShellHarness=true`.
 
-### Upload a verified combined bundle
+### Upload a verified combined bundle (2.6.0+)
 
 Run planning and `bundleAll` separately from the upload invocation. After testing and
 reviewing the saved ZIP, configure the upload task with the ZIP and manifest SHA-256 values
