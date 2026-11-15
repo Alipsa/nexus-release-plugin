@@ -65,6 +65,9 @@ final class ModuleReleaseConfigurer {
             task.dependsOn(extension.guardTask)
         }
         extension.guardTask.configure { task ->
+            // The guard hashes the planned POMs. When staging regenerates them in the same
+            // build, hash only after regeneration finishes, never a missing or partial file.
+            task.mustRunAfter(model.call().pomTasks)
             task.versionsJson.convention(model.call().versionsJson)
             task.modulePaths.set(paths)
             task.unpublishedProjectPaths.set(unpublishedPaths)
