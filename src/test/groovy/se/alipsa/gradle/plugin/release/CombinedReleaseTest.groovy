@@ -340,6 +340,8 @@ class CombinedReleaseTest {
 
     @Test void snapshotCreationFailureExplainsWritableDirectoryRequirement() {
         File record = new File(directory, 'deployment.json')
+        // A file as parent fails on every OS, including root-run tests where permissions do not.
+        // This exercises snapshot creation error handling without relying on a read-only directory.
         File blockedDirectory = new File(directory, 'not-a-directory'); blockedDirectory.text = 'blocked'
         File bundle = new File(blockedDirectory, 'bundle.zip')
         def client = new CentralPortalClient(org.gradle.api.logging.Logging.getLogger(CombinedReleaseTest), null, 'u', 'p') {
@@ -352,6 +354,23 @@ class CombinedReleaseTest {
         assertTrue(failure.message.contains('bundleFile'))
         assertInstanceOf(IOException, failure.cause)
         assertFalse(record.exists())
+    }
+
+    @Test void snapshotCopyFailureExplainsNoUploadAndCleansUp() {
+        File record = new File(directory, 'deployment.json')
+        File bundle = new File(directory, 'missing-bundle.zip')
+        def client = new CentralPortalClient(org.gradle.api.logging.Logging.getLogger(CombinedReleaseTest), null, 'u', 'p') {
+            @Override String upload(File file) { fail('Copy failure must never upload'); '' }
+        }
+        def failure = assertThrows(IllegalStateException) {
+            CombinedDeployment.submit(record, bundle, [selected: []], new PublicationStatus(), client)
+        }
+        assertTrue(failure.message.contains('ZIP is readable'))
+        assertTrue(failure.message.contains('sufficient free space and write access'))
+        assertTrue(failure.message.contains('No upload attempted'))
+        assertInstanceOf(IOException, failure.cause)
+        assertFalse(record.exists())
+        assertFalse(directory.listFiles().any { it.name.startsWith('.verified-upload-') })
     }
 
     @Test void byteAndFileChecksumsUseTheSameHexFormat() {

@@ -82,7 +82,13 @@ final class CombinedReleaseRegistrar {
                 throw new GradleException('Do not request releaseAllPlan and releaseAll in the same invocation; review the saved manifest, then run :releaseAll separately')
             }
             if (graph.hasTask(releasePath)) {
-                releaseAllTask.get().validateDigestInputs()
+                ReleaseAllTask release = releaseAllTask.get()
+                release.validateDigestInputs()
+                if (!release.resumeId.getOrElse('') && release.useExistingBundle.getOrElse(false)) {
+                    // Bind upload evidence only for an upload graph, never plain checks/bundling.
+                    // This input is retained when the configuration cache stores the resolved graph.
+                    guardTask.get().expectedManifestSha256.set(release.expectedManifestSha256)
+                }
             }
             if (graph.hasTask(releasePath) && graph.hasTask(bundlePath)) {
                 ReleaseAllTask release = releaseAllTask.get()

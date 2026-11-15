@@ -316,22 +316,24 @@ This submits without rebuilding, signing or staging again. Existing-bundle mode 
 both digests; do not derive them from the mutable receipt at upload time. Each must match
 both its receipt entry and the corresponding file. The verified manifest controls the
 coordinates probed before upload and during polling in that upload invocation, so review
-and retain it with the ZIP. A later resume trusts the manifest copy in `deployment.json`; it ignores the
-reviewed digests and does not authenticate that journal copy. Protect the retained journal
-from modification.
+and retain it with the ZIP. A later resume trusts the manifest copy in `deployment.json`;
+it ignores the reviewed digests and does not authenticate that journal copy. Protect the
+retained journal from modification.
 
 Digest presence and syntax are validated before any task runs. Digests are accepted only
 in existing-bundle mode: normal uploads rebuild and re-sign artifacts, so an earlier ZIP's
 digest generally cannot match. Digest properties also come from project/user
 `gradle.properties` and `ORG_GRADLE_PROJECT_*` environment variables; remove or clear them
-before a normal release. Source/version and saved manifest hashes are rechecked.
+before a normal release. Upload evidence is ignored when `releaseAll` is absent from the
+task graph, including plain checks, signing checks and bundle-only runs. Source/version
+and saved manifest hashes are rechecked.
 
 The uploader hashes and parses the same manifest bytes, and sends a private ZIP snapshot
 checked against the verified digest. The bundle directory must be writable for snapshot
 creation. Snapshots live beside the bundle, independently of the deployment journal
-location. Cleanup failures emit a warning naming the path for
-manual removal after the upload has stopped; after a process crash, remove leftover
-`.verified-upload-*` directories there once no upload is running.
+location. Cleanup failures emit a warning naming the path for manual removal after the
+upload has stopped; after a process crash, remove leftover `.verified-upload-*`
+directories there once no upload is running.
 
 Requesting `bundleAll` and `releaseAll` together in existing-bundle mode is rejected,
 including through task dependencies. `useExistingBundle` defaults to false, including

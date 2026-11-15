@@ -65,11 +65,6 @@ final class ModuleReleaseConfigurer {
             task.dependsOn(extension.guardTask)
         }
         extension.guardTask.configure { task ->
-            task.expectedManifestSha256.set(project.providers.provider {
-                ReleaseAllTask release = extension.releaseAllTask.get()
-                !release.resumeId.getOrElse('') && release.useExistingBundle.getOrElse(false) ?
-                    release.expectedManifestSha256.getOrElse('') : ''
-            })
             task.versionsJson.convention(model.call().versionsJson)
             task.modulePaths.set(paths)
             task.unpublishedProjectPaths.set(unpublishedPaths)

@@ -706,6 +706,22 @@ nexusReleasePlugin {
         }
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = ['bundleAll', 'releaseAllSigningCheck', 'releaseAllGuard', ':core:check'])
+    void nonUploadGraphsIgnoreExportedUploadEvidence(String task) {
+        withServer { String base, List requests ->
+            existingFixture(base)
+            run('releaseAllPlan')
+            String[] args = ['-Pexisting', '-Pexpected=not-an-upload-digest', '-PexpectedManifest=not-a-manifest-digest']
+            def first = run(task, *args)
+            assertNull(first.task(':releaseAll'))
+            def cached = run(task, *args)
+            assertNull(cached.task(':releaseAll'))
+            assertTrue(cached.output.contains('Reusing configuration cache.'))
+            assertFalse(requests.any { it.contains('/publisher/upload') })
+        }
+    }
+
     @Test void absentExistingBundleProviderDefaultsToNormalBuild() {
         withServer([] as Set, ['example:core-artifact:1.0'] as Set) { String base, List requests, List rawBodies ->
             fixture(base, "modules = [':core']")

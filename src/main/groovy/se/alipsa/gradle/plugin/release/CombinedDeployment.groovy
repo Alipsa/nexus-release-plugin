@@ -21,8 +21,13 @@ class CombinedDeployment {
         }
         File snapshot = new File(uploadDirectory, bundle.name)
         try {
-            java.nio.file.Files.copy(bundle.toPath(), snapshot.toPath())
-            String uploadHash = ReleaseChecksums.checksum(snapshot, 'SHA-256')
+            String uploadHash
+            try {
+                java.nio.file.Files.copy(bundle.toPath(), snapshot.toPath())
+                uploadHash = ReleaseChecksums.checksum(snapshot, 'SHA-256')
+            } catch (IOException failure) {
+                throw new IllegalStateException("Cannot copy or read the verified upload snapshot for ${bundle.absolutePath}; check that the ZIP is readable and its directory has sufficient free space and write access. No upload attempted", failure)
+            }
             if (verifiedBundleHash && uploadHash != verifiedBundleHash) {
                 throw new IllegalStateException('Bundle changed after verification; no upload attempted')
             }
