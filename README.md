@@ -293,25 +293,40 @@ The publishing-script harness runs as part of `check` when Bash is available. Lo
 ### Upload a verified combined bundle
 
 Run planning and `bundleAll` separately from the upload invocation. After testing and
-reviewing the saved ZIP, configure the upload task with its SHA-256 from retained,
-reviewed evidence:
+reviewing the saved ZIP, configure the upload task with the ZIP and manifest SHA-256 values
+from retained, reviewed evidence:
 
 ```groovy
 releaseAll {
     useExistingBundle = providers.gradleProperty('existing').isPresent()
     expectedBundleSha256 = providers.gradleProperty('verifiedBundleSha256')
+    expectedManifestSha256 = providers.gradleProperty('verifiedManifestSha256')
 }
 ```
 
-Then run `releaseAll -Pexisting -PverifiedBundleSha256=<reviewed SHA-256>` to submit
-without rebuilding, signing or staging again. Existing-bundle mode requires this digest;
-do not derive it from the mutable receipt beside the ZIP at upload time. It must match
-both the receipt and the actual ZIP. The optional digest also applies to normal uploads
-when supplied. Source/version and saved manifest hashes are rechecked before upload.
-The uploader checks a private snapshot against the verified digest and sends that snapshot.
+Then run:
+
+```sh
+./gradlew releaseAll -Pexisting \
+  -PverifiedBundleSha256="$REVIEWED_BUNDLE_SHA256" \
+  -PverifiedManifestSha256="$REVIEWED_MANIFEST_SHA256"
+```
+
+This submits without rebuilding, signing or staging again. Existing-bundle mode requires
+both digests; do not derive them from the mutable receipt at upload time. Each must match
+both its receipt entry and the corresponding file. The manifest controls the coordinates
+probed before upload and during publication polling, so review and retain it with the ZIP.
+Digest presence and syntax are validated before any task runs. Digests are accepted only
+in existing-bundle mode: normal uploads rebuild and re-sign artifacts, so an earlier ZIP's
+digest generally cannot match. Source/version and saved manifest hashes are rechecked.
+The uploader hashes and parses the same manifest bytes, and sends a private ZIP snapshot
+checked against the verified digest. Snapshots live beside the bundle, independently of
+the deployment journal location. Cleanup failures emit a warning naming the path for
+manual removal after the upload has stopped; after a process crash, remove leftover
+`.verified-upload-*` directories there once no upload is running.
 
 Requesting `bundleAll` and `releaseAll` together in existing-bundle mode is rejected,
 including through task dependencies. `useExistingBundle` defaults to false, including
 when assigned a provider with no value. When `resumeId` is set, resume takes priority:
-both `useExistingBundle` and `expectedBundleSha256` are ignored. Resume remains
-status-only and does not require current build outputs.
+`useExistingBundle`, `expectedBundleSha256` and `expectedManifestSha256` are ignored.
+Resume remains status-only and does not require current build outputs.

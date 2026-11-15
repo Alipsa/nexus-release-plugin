@@ -315,13 +315,15 @@ class CombinedReleaseTest {
     }
 
     @Test void uploadUsesVerifiedSnapshotEvenIfOriginalIsReplaced() {
-        File record = new File(directory, 'deployment.json')
-        File bundle = new File(directory, 'bundle.zip'); bundle.text = 'verified'
+        File record = new File(directory, 'journal/deployment.json')
+        File bundle = new File(directory, 'bundles/bundle.zip'); bundle.parentFile.mkdirs(); bundle.text = 'verified'
         String verifiedHash = ReleaseChecksums.checksum(bundle, 'SHA-256')
         def client = new CentralPortalClient(org.gradle.api.logging.Logging.getLogger(CombinedReleaseTest), null, 'u', 'p') {
             @Override String upload(File file) {
                 assertNotEquals(bundle.canonicalPath, file.canonicalPath)
                 assertEquals(bundle.name, file.name)
+                assertEquals(bundle.parentFile.canonicalPath, file.parentFile.parentFile.canonicalPath)
+                assertNotEquals(record.parentFile.canonicalPath, file.parentFile.parentFile.canonicalPath)
                 bundle.text = 'replaced before multipart reads'
                 assertEquals('verified', file.text)
                 assertEquals(verifiedHash, ReleaseChecksums.checksum(file, 'SHA-256'))
@@ -331,6 +333,8 @@ class CombinedReleaseTest {
         Map state = CombinedDeployment.submit(record, bundle, [selected: []], new PublicationStatus(), client, verifiedHash)
         assertEquals(verifiedHash, state.bundleHash)
         assertEquals(verifiedHash, ReleaseManifest.read(record).bundleHash)
+        assertFalse(bundle.parentFile.listFiles().any { it.name.startsWith('.verified-upload-') })
+        assertFalse(record.parentFile.listFiles().any { it.name.startsWith('.verified-upload-') })
         assertFalse(directory.listFiles().any { it.name.startsWith('.verified-upload-') })
     }
 

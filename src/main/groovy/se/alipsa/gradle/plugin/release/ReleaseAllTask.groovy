@@ -26,6 +26,27 @@ abstract class ReleaseAllTask extends DefaultTask {
     /** Reviewed SHA-256 anchor, required in existing-bundle mode; ignored during resume. */
     @Input @Optional abstract Property<String> getExpectedBundleSha256()
 
+    /** Reviewed manifest anchor, required in existing-bundle mode; ignored during resume. */
+    @Input @Optional abstract Property<String> getExpectedManifestSha256()
+
+    /** Validates reviewed evidence inputs before any build tasks execute. */
+    void validateDigestInputs() {
+        if (resumeId.getOrElse('')) return
+        boolean existing = useExistingBundle.getOrElse(false)
+        [expectedBundleSha256: expectedBundleSha256.getOrElse(''),
+         expectedManifestSha256: expectedManifestSha256.getOrElse('')].each { String name, String value ->
+            if (value && !(value ==~ /[0-9a-fA-F]{64}/)) {
+                throw new IllegalStateException("${name} must be a 64-character hexadecimal SHA-256")
+            }
+            if (existing && !value) {
+                throw new IllegalStateException("Existing-bundle mode requires ${name} from reviewed evidence")
+            }
+            if (!existing && value) {
+                throw new IllegalStateException("${name} is supported only in existing-bundle mode; set useExistingBundle or remove the digest")
+            }
+        }
+    }
+
     /** Checks source and availability before submitting, or resumes without building. */
     @TaskAction
     void release() {
@@ -33,27 +54,31 @@ abstract class ReleaseAllTask extends DefaultTask {
         String id = resumeId.getOrElse('')
         File record = recordFile.get().asFile
         if (!id) {
-            String expected = expectedBundleSha256.getOrElse('')
-            if (useExistingBundle.getOrElse(false) && !expected) {
-                throw new IllegalStateException('Existing-bundle mode requires expectedBundleSha256 from reviewed evidence')
-            }
-            if (expected && !(expected ==~ /[0-9a-fA-F]{64}/)) {
-                throw new IllegalStateException('expectedBundleSha256 must be a 64-character hexadecimal SHA-256')
-            }
-            expected = expected.toLowerCase(Locale.ROOT)
+            validateDigestInputs()
+            String expected = expectedBundleSha256.getOrElse('').toLowerCase(Locale.ROOT)
+            String expectedManifest = expectedManifestSha256.getOrElse('').toLowerCase(Locale.ROOT)
             [manifestFile.get().asFile, receiptFile.get().asFile, bundleFile.get().asFile].each { File required ->
                 if (!required.isFile()) {
-                    throw new IllegalStateException("Prepared release file missing: ${required.name}; run releaseAllPlan and bundleAll separately before existing-bundle upload")
+                    String guidance = useExistingBundle.getOrElse(false) ?
+                        'run releaseAllPlan and bundleAll separately before existing-bundle upload' :
+                        'check that releaseAll and bundleAll use the same manifest, receipt and bundle paths'
+                    throw new IllegalStateException("Prepared release file missing: ${required.name}; ${guidance}")
                 }
             }
-            Map manifest = ReleaseManifest.read(manifestFile.get().asFile)
-            ReleaseManifest.guard(sourceDirectory.get().asFile, manifest)
+            // Hash and parse the same bytes, so the probed graph is the reviewed manifest.
+            byte[] manifestBytes = manifestFile.get().asFile.bytes
+            String manifestHash = java.security.MessageDigest.getInstance('SHA-256').digest(manifestBytes).encodeHex().toString()
             Map receipt = ReleaseManifest.read(receiptFile.get().asFile)
+            if (expectedManifest && (receipt.manifestHash != expectedManifest || manifestHash != expectedManifest)) {
+                throw new IllegalStateException('Manifest or receipt differs from expectedManifestSha256; no upload attempted')
+            }
+            Map manifest = new groovy.json.JsonSlurper().parse(manifestBytes) as Map
+            ReleaseManifest.guard(sourceDirectory.get().asFile, manifest)
             String verifiedHash = ReleaseChecksums.checksum(bundleFile.get().asFile, 'SHA-256')
             if (expected && (receipt.bundleHash != expected || verifiedHash != expected)) {
                 throw new IllegalStateException('Bundle or receipt differs from expectedBundleSha256; no upload attempted')
             }
-            if (receipt.bundleHash != verifiedHash || receipt.manifestHash != ReleaseChecksums.checksum(manifestFile.get().asFile, 'SHA-256')) {
+            if (receipt.bundleHash != verifiedHash || receipt.manifestHash != manifestHash) {
                 throw new IllegalStateException('Bundle or manifest changed since validation; rebuild the bundle')
             }
             def status = new PublicationStatus(repositoryUrl: repositoryUrl.get(), portalUrl: portalUrl.get(), userName: userName.getOrElse(''), password: password.getOrElse(''), requireFixture: true, fixtureFile: portalFixture.get().asFile)

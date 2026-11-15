@@ -2,6 +2,8 @@ package se.alipsa.gradle.plugin.release
 
 /** One-attempt upload journaling and status-only recovery. */
 class CombinedDeployment {
+    private static final org.gradle.api.logging.Logger LOGGER = org.gradle.api.logging.Logging.getLogger(CombinedDeployment)
+
     /** Uploads once, persisting intent before HTTP and ID immediately after it. */
     static Map submit(File record, File bundle, Map manifest, PublicationStatus availability, CentralPortalClient client, String verifiedBundleHash = '') {
         if (record.exists()) throw new IllegalStateException('Deployment record exists; resume or reconcile it before a new upload')
@@ -11,8 +13,7 @@ class CombinedDeployment {
             }
         }
         // Upload a private snapshot: later writes to the original ZIP cannot change request bytes.
-        record.absoluteFile.parentFile.mkdirs()
-        File uploadDirectory = java.nio.file.Files.createTempDirectory(record.absoluteFile.parentFile.toPath(), '.verified-upload-').toFile()
+        File uploadDirectory = java.nio.file.Files.createTempDirectory(bundle.absoluteFile.parentFile.toPath(), '.verified-upload-').toFile()
         File snapshot = new File(uploadDirectory, bundle.name)
         try {
             java.nio.file.Files.copy(bundle.toPath(), snapshot.toPath())
@@ -22,8 +23,11 @@ class CombinedDeployment {
             }
             return uploadSnapshot(record, snapshot, manifest, client, uploadHash)
         } finally {
-            snapshot.delete()
-            uploadDirectory.delete()
+            [snapshot, uploadDirectory].each { File temporary ->
+                if (temporary.exists() && !temporary.delete()) {
+                    LOGGER.warn("Could not remove verified upload temporary path {}; remove it manually after the upload has stopped", temporary.absolutePath)
+                }
+            }
         }
     }
 

@@ -69,6 +69,7 @@ final class CombinedReleaseRegistrar {
             task.resumeId.convention('')
             task.useExistingBundle.convention(false)
             task.expectedBundleSha256.convention('')
+            task.expectedManifestSha256.convention('')
         }
         // Inspect resolved paths without realizing tasks. Reject before any task actions,
         // including when planning is scheduled through dependencies or abbreviations.
@@ -79,6 +80,9 @@ final class CombinedReleaseRegistrar {
         project.gradle.taskGraph.whenReady { TaskExecutionGraph graph ->
             if (graph.hasTask(planPath) && graph.hasTask(releasePath)) {
                 throw new GradleException('Do not request releaseAllPlan and releaseAll in the same invocation; review the saved manifest, then run :releaseAll separately')
+            }
+            if (graph.hasTask(releasePath)) {
+                releaseAllTask.get().validateDigestInputs()
             }
             if (graph.hasTask(releasePath) && graph.hasTask(bundlePath)) {
                 ReleaseAllTask release = releaseAllTask.get()
