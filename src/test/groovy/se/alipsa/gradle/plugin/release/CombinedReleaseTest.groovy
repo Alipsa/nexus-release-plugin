@@ -2,6 +2,9 @@ package se.alipsa.gradle.plugin.release
 
 import com.sun.net.httpserver.HttpServer
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.RepeatedTest
+import org.junit.jupiter.api.condition.EnabledOnOs
+import org.junit.jupiter.api.condition.OS
 import org.junit.jupiter.api.io.TempDir
 import org.junit.jupiter.api.parallel.Isolated
 import java.util.zip.ZipFile
@@ -532,7 +535,8 @@ class CombinedReleaseTest {
         assertTrue(failure.message.contains('fatal:'))
     }
 
-    @Test void concurrentRecordUpdatesKeepValidJournal() {
+    @RepeatedTest(5)
+    void concurrentRecordUpdatesKeepValidJournal() {
         File record = new File(directory, 'journal.json')
         ReleaseManifest.write(record, [state: 'UPLOADED'])
         def executor = java.util.concurrent.Executors.newFixedThreadPool(3)
@@ -546,6 +550,60 @@ class CombinedReleaseTest {
             writers.each { it.get(10, java.util.concurrent.TimeUnit.SECONDS) }
             assertFalse(directory.listFiles().any { it.name.endsWith('.tmp') })
         } finally { executor.shutdownNow() }
+    }
+
+    @Test
+    @EnabledOnOs(OS.WINDOWS)
+    void journalUpdateRetriesUntilWindowsReaderReleasesItsLock() {
+        File record = new File(directory, 'journal.json')
+        ReleaseManifest.write(record, [state: 'UPLOADED'])
+        def executor = java.util.concurrent.Executors.newSingleThreadScheduledExecutor()
+        new FileInputStream(record).withCloseable { reader ->
+            def release = executor.schedule({ -> reader.close() } as Runnable, 100, java.util.concurrent.TimeUnit.MILLISECONDS)
+            try {
+                ReleaseManifest.write(record, [state: 'AVAILABLE'])
+                release.get(5, java.util.concurrent.TimeUnit.SECONDS)
+                assertEquals('AVAILABLE', ReleaseManifest.read(record).state)
+                assertFalse(directory.listFiles().any { it.name.endsWith('.tmp') })
+            } finally { executor.shutdownNow() }
+        }
+    }
+
+    @Test
+    @EnabledOnOs(OS.WINDOWS)
+    void journalReplacementRetriesWhenItsTemporaryFileIsInUse() {
+        File source = new File(directory, 'journal.tmp')
+        File target = new File(directory, 'journal.json')
+        ReleaseManifest.write(source, [state: 'AVAILABLE'])
+        ReleaseManifest.write(target, [state: 'UPLOADED'])
+        // A scanner can open the temporary file between writing and renaming it.
+        // Invoke the replacement directly to hold that source handle deterministically.
+        def replace = ReleaseManifest.getDeclaredMethod('replaceAtomically', java.nio.file.Path, java.nio.file.Path)
+        replace.accessible = true
+        def executor = java.util.concurrent.Executors.newSingleThreadScheduledExecutor()
+        new FileInputStream(source).withCloseable { reader ->
+            def release = executor.schedule({ -> reader.close() } as Runnable, 100, java.util.concurrent.TimeUnit.MILLISECONDS)
+            try {
+                replace.invoke(null, source.toPath(), target.toPath())
+                release.get(5, java.util.concurrent.TimeUnit.SECONDS)
+                assertEquals('AVAILABLE', ReleaseManifest.read(target).state)
+                assertFalse(source.exists())
+            } finally { executor.shutdownNow() }
+        }
+    }
+
+    @Test
+    @EnabledOnOs(OS.WINDOWS)
+    void permanentlyLockedJournalFailsWithoutChangingOriginalAndCleansUp() {
+        File record = new File(directory, 'journal.json')
+        ReleaseManifest.write(record, [state: 'UPLOADED'])
+        new FileInputStream(record).withCloseable {
+            assertThrows(java.nio.file.AccessDeniedException) {
+                ReleaseManifest.write(record, [state: 'AVAILABLE'])
+            }
+            assertEquals('UPLOADED', ReleaseManifest.read(record).state)
+            assertFalse(directory.listFiles().any { it.name.endsWith('.tmp') })
+        }
     }
 
     @Test void parentPomsAreRejectedClearlyAndExternalManagedVersionsCanBeFlattened() {

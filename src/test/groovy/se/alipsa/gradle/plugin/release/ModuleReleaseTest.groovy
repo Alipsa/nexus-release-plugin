@@ -318,6 +318,28 @@ tasks.named('generatePomFileForMavenPublication') {
         }
     }
 
+    @Test void mavenPreparationWaitsForRegeneratedPomsAndPrecedesBundling() {
+        withServer { String base, List requests ->
+            fixture(base, "modules = [':core']")
+            run(':releaseAllPlan')
+            // Preparation validates the planned POM even without a static Maven component,
+            // so this exercises its real guard without requiring external Maven helpers.
+            File pom = new File(root, 'core/build/publications/maven/pom-default.xml')
+            2.times { int invocation ->
+                assertTrue(pom.delete())
+                def result = run(':bundleAll', ':releaseAllPrepareMaven', ':core:generatePomFileForMavenPublication')
+                List<String> tasks = result.tasks*.path
+                [':core:generatePomFileForMavenPublication', ':releaseAllPrepareMaven', ':bundleAll'].each { path ->
+                    assertTrue(tasks.contains(path), 'Expected task in results: ' + path)
+                }
+                assertTrue(tasks.indexOf(':core:generatePomFileForMavenPublication') < tasks.indexOf(':releaseAllPrepareMaven'))
+                assertTrue(tasks.indexOf(':releaseAllPrepareMaven') < tasks.indexOf(':bundleAll'))
+                assertTrue(new File(root, BUNDLE).isFile())
+                if (invocation == 1) assertTrue(result.output.contains('Reusing configuration cache'))
+            }
+        }
+    }
+
     @Test void changedSelectionCannotReuseStaleStagedArtifactsAfterReplanning() {
         withServer { String base, List requests ->
             fixture(base, "modules = [':api', ':core']")

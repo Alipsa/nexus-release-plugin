@@ -31,7 +31,7 @@ this plugin is a separate operation.
 In the root build, list the project paths whose publications you want to consider:
 
 ```groovy
-plugins { id 'se.alipsa.nexus-release-plugin' version '2.5.1' }
+plugins { id 'se.alipsa.nexus-release-plugin' version '2.6.0' }
 
 nexusReleasePlugin {
     userName = providers.gradleProperty('sonatypeUsername')
@@ -176,7 +176,7 @@ The source repository must be clean and committed. Generated files belong in ign
 | `releaseAllGuard` | `sourceDirectory`, `manifestFile`, `versionsJson`; checks revision, clean tree, publication-POM hashes and Git index flags and effective publication versions before staging tasks run. |
 | `releaseAllPrepareMaven` | `sourceDirectory`, `manifestFile`; returns after source validation when no static Maven component is selected. Otherwise requires `stagingDirectory`, separate `localRepository`, `mavenWorkDirectory`, `verifierFile`, `settingsHelperFile`, `stagingRepositoryId` (default `release-staging`), optional `userSettingsFile` (default `~/.m2/settings.xml`); runs the caller's verifier and Maven `install -Prelease`, never deploy. The settings helper takes source user-settings, staged repository, output-settings and repository ID; it must preserve signing settings without logging secrets. |
 | `bundleAll` | `sourceDirectory`, `manifestFile`, `stagingDirectory`; writes `bundleFile` and `receiptFile`. Rechecks source, dependency POMs, metadata, artifact policy, nonempty signature files and staged checksums (signature cryptography is not verified). Generates MD5/SHA-1 for artifacts/signatures. |
-| `releaseAll` | `sourceDirectory`, `manifestFile`, `bundleFile`, `receiptFile`, `recordFile`, `portalFixture`, repository/Portal URLs and credentials; `resumeId` defaults to an empty string for a new upload, or a saved deployment ID for status-only recovery. Rechecks availability and uploads once. |
+| `releaseAll` | `sourceDirectory`, `manifestFile`, `bundleFile`, `receiptFile`, `recordFile`, `portalFixture`, repository/Portal URLs and credentials; `resumeId` defaults to an empty string for a new upload, or a saved deployment ID for status-only recovery. `useExistingBundle` (default `false`, 2.6.0+) uploads a prepared bundle without rebuilding, signing or staging, and requires both `expectedBundleSha256` and `expectedManifestSha256` (64 hexadecimal characters each). Digests are rejected for normal uploads. Rechecks source, manifest and bundle hashes against the receipt and reviewed digests, and publication availability before uploading a verified private ZIP snapshot once. With `resumeId` set, these three properties are ignored. See [verified-bundle uploads](README.md#upload-a-verified-combined-bundle-260). |
 
 The Matrix build configures these properties in `gradle/release-all.gradle`. For example,
 a caller configures the bundle task after registering its own staging/preparation workflow:
@@ -213,6 +213,14 @@ planning, checks, signing, staging, bundling, or upload can run. Existing manife
 bundles, and receipts remain untouched. Rejected graphs cannot be reused from the
 configuration cache to bypass this check. Separate planning/bundling, standalone upload,
 and status-only resume retain cache support.
+
+In advanced (caller-managed) mode, order any candidate POM regeneration before
+`releaseAllGuard` and `releaseAllPrepareMaven` using `mustRunAfter` (or `dependsOn`
+when regeneration should always be scheduled). Both tasks hash the planned POMs;
+running them alongside POM generation without ordering can intermittently fail with
+`Stale manifest input: …/pom-default.xml`. Module mode supplies this ordering
+automatically. Order `bundleAll` after Maven preparation when scheduling both.
+
 Run source guards before staging, the caller's scoped verification before
 preparation, then `bundleAll`, then `releaseAll`. Do not upload if any preceding phase fails.
 The combined tasks support strict configuration-cache reuse; legacy verification tasks can
