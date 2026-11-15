@@ -71,12 +71,11 @@ class ReleaseManifest {
                     java.nio.file.StandardCopyOption.REPLACE_EXISTING)
                 return
             } catch (java.nio.file.FileSystemException failure) {
-                // Windows can briefly deny replacement during another rename or an
-                // external read without delete sharing. Keep the old journal intact
-                // and retry only the atomic move, for at most 1.27 seconds in total.
-                boolean sharingViolation = failure.reason?.toLowerCase(Locale.ROOT)?.contains('being used by another process')
-                if (attempt >= 7 || !System.getProperty('os.name').toLowerCase(Locale.ROOT).contains('windows') ||
-                    !(failure instanceof java.nio.file.AccessDeniedException || sharingViolation)) throw failure
+                // Windows reports sharing conflicts using localized reason text and
+                // different FileSystemException subtypes. Retry the atomic move for
+                // any such failure, with 1.27 seconds of total backoff. Persistent
+                // failures still propagate without deleting the existing journal.
+                if (attempt >= 7 || !System.getProperty('os.name').toLowerCase(Locale.ROOT).contains('windows')) throw failure
                 try {
                     Thread.sleep(10L << attempt)
                 } catch (InterruptedException interrupted) {

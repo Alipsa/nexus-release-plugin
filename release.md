@@ -19,9 +19,9 @@
 - Decode Git output as UTF-8 so non-ASCII source paths and guard diagnostics remain
   readable with non-UTF-8 JVM defaults, including Windows on JDK 17.
 - Fix Windows journal locking during concurrent reads and atomic updates by reading
-  JSON through NIO with delete sharing and briefly retrying atomic replacement when
-  Windows denies access or reports a sharing violation. Persistent locks still fail
-  without changing the old journal.
+  JSON through NIO with delete sharing and briefly retrying filesystem failures during
+  atomic replacement on Windows, independently of the display language. Persistent
+  failures still propagate without changing the old journal.
 - Fix (PR #18): order `releaseAllGuard` after planned POM generation in module mode to avoid
   intermittent `Stale manifest input: …/pom-default.xml` failures in user builds and CI.
   Also order `releaseAllPrepareMaven` after planned POM generation and `bundleAll` after
