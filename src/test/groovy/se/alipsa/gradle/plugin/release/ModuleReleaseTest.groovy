@@ -222,6 +222,26 @@ if (gradle.startParameter.taskNames == ['help']) {
         }
     }
 
+    @Test void guardHashesPomsOnlyAfterPomRegenerationFinishes() {
+        withServer { String base, List requests ->
+            fixture(base, "modules = [':core']")
+            // CI regenerated POMs during bundleAll; force that and widen the window in which
+            // the guard intermittently saw a missing or partially written POM.
+            new File(root, 'core/build.gradle') << '''
+tasks.named('generatePomFileForMavenPublication') {
+    outputs.upToDateWhen { false }
+    doFirst { destination.delete(); Thread.sleep(1500) }
+}
+'''
+            commit()
+            run('releaseAllPlan')
+            def bundle = run('bundleAll')
+            assertEquals(org.gradle.testkit.runner.TaskOutcome.SUCCESS, bundle.task(':releaseAllGuard')?.outcome)
+            assertEquals(org.gradle.testkit.runner.TaskOutcome.SUCCESS, bundle.task(':core:generatePomFileForMavenPublication')?.outcome)
+            assertTrue(new File(root, BUNDLE).isFile())
+        }
+    }
+
     @Test void namedSubsetPlansBuildsSignsAndBundlesRealPublications() {
         withServer { String base, List requests ->
             fixture(base, "modules = [':api', 'core']")
