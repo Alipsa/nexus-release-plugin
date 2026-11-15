@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Timeout
 import org.junit.jupiter.api.io.TempDir
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
+import org.gradle.testkit.runner.TaskOutcome
 import java.util.zip.ZipFile
 import static org.junit.jupiter.api.Assertions.*
 
@@ -727,16 +728,22 @@ nexusReleasePlugin {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = ['bundleAll', 'releaseAllSigningCheck', 'releaseAllGuard', ':core:check'])
+    @ValueSource(strings = ['bundleAll', 'releaseAllSigningCheck', 'releaseAllGuard'])
     void nonUploadGraphsIgnoreExportedUploadEvidence(String task) {
         withServer { String base, List requests ->
             existingFixture(base)
             run('releaseAllPlan')
-            String[] args = ['-Pexisting', '-Pexpected=not-an-upload-digest', '-PexpectedManifest=not-a-manifest-digest']
+            // Every case schedules the guard, so passing proves it ignored the malformed evidence.
+            String[] args = ['-Pexisting', '-Pexpected=not-an-upload-digest', '-PexpectedManifest=not-a-manifest-digest', '--info']
             def first = run(task, *args)
             assertNull(first.task(':releaseAll'))
+            assertEquals(TaskOutcome.SUCCESS, first.task(':releaseAllGuard')?.outcome)
+            // bundleAll stages modules, whose check tasks depend on the guard.
+            if (task == 'bundleAll') assertEquals(TaskOutcome.SUCCESS, first.task(':core:check')?.outcome)
+            assertTrue(first.output.contains('Upload evidence ignored: releaseAll is not scheduled'), first.output)
             def cached = run(task, *args)
             assertNull(cached.task(':releaseAll'))
+            assertEquals(TaskOutcome.SUCCESS, cached.task(':releaseAllGuard')?.outcome)
             assertTrue(cached.output.contains('Reusing configuration cache.'))
             assertFalse(requests.any { it.contains('/publisher/upload') })
         }
