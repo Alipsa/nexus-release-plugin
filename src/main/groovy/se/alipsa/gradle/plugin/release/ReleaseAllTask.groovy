@@ -21,8 +21,10 @@ abstract class ReleaseAllTask extends DefaultTask {
     @Input abstract Property<String> getPortalUrl()
     @Input abstract Property<String> getRepositoryUrl()
     @Input abstract Property<String> getResumeId()
-    /** Upload the saved, verified ZIP without scheduling bundleAll. */
-    @Input abstract Property<Boolean> getUseExistingBundle()
+    /** Upload the saved ZIP without bundling; ignored when resumeId is set. */
+    @Input @Optional abstract Property<Boolean> getUseExistingBundle()
+    /** Reviewed SHA-256 anchor, required in existing-bundle mode; ignored during resume. */
+    @Input @Optional abstract Property<String> getExpectedBundleSha256()
 
     /** Checks source and availability before submitting, or resumes without building. */
     @TaskAction
@@ -31,14 +33,31 @@ abstract class ReleaseAllTask extends DefaultTask {
         String id = resumeId.getOrElse('')
         File record = recordFile.get().asFile
         if (!id) {
+            String expected = expectedBundleSha256.getOrElse('')
+            if (useExistingBundle.getOrElse(false) && !expected) {
+                throw new IllegalStateException('Existing-bundle mode requires expectedBundleSha256 from reviewed evidence')
+            }
+            if (expected && !(expected ==~ /[0-9a-fA-F]{64}/)) {
+                throw new IllegalStateException('expectedBundleSha256 must be a 64-character hexadecimal SHA-256')
+            }
+            expected = expected.toLowerCase(Locale.ROOT)
+            [manifestFile.get().asFile, receiptFile.get().asFile, bundleFile.get().asFile].each { File required ->
+                if (!required.isFile()) {
+                    throw new IllegalStateException("Prepared release file missing: ${required.name}; run releaseAllPlan and bundleAll separately before existing-bundle upload")
+                }
+            }
             Map manifest = ReleaseManifest.read(manifestFile.get().asFile)
             ReleaseManifest.guard(sourceDirectory.get().asFile, manifest)
             Map receipt = ReleaseManifest.read(receiptFile.get().asFile)
-            if (receipt.bundleHash != ReleaseChecksums.checksum(bundleFile.get().asFile, 'SHA-256') || receipt.manifestHash != ReleaseChecksums.checksum(manifestFile.get().asFile, 'SHA-256')) {
+            String verifiedHash = ReleaseChecksums.checksum(bundleFile.get().asFile, 'SHA-256')
+            if (expected && (receipt.bundleHash != expected || verifiedHash != expected)) {
+                throw new IllegalStateException('Bundle or receipt differs from expectedBundleSha256; no upload attempted')
+            }
+            if (receipt.bundleHash != verifiedHash || receipt.manifestHash != ReleaseChecksums.checksum(manifestFile.get().asFile, 'SHA-256')) {
                 throw new IllegalStateException('Bundle or manifest changed since validation; rebuild the bundle')
             }
             def status = new PublicationStatus(repositoryUrl: repositoryUrl.get(), portalUrl: portalUrl.get(), userName: userName.getOrElse(''), password: password.getOrElse(''), requireFixture: true, fixtureFile: portalFixture.get().asFile)
-            id = CombinedDeployment.submit(record, bundleFile.get().asFile, manifest, status, client).deploymentId
+            id = CombinedDeployment.submit(record, bundleFile.get().asFile, manifest, status, client, verifiedHash).deploymentId
         }
         CombinedDeployment.resume(record, id, client, { Map manifest ->
             manifest.selected.every { Map p ->

@@ -68,15 +68,23 @@ final class CombinedReleaseRegistrar {
             task.portalFixture.convention(shared.portalFixture)
             task.resumeId.convention('')
             task.useExistingBundle.convention(false)
+            task.expectedBundleSha256.convention('')
         }
         // Inspect resolved paths without realizing tasks. Reject before any task actions,
         // including when planning is scheduled through dependencies or abbreviations.
         // Rejected graphs cannot be reused to bypass validation on the next invocation.
         String planPath = project.absoluteProjectPath('releaseAllPlan')
         String releasePath = project.absoluteProjectPath('releaseAll')
+        String bundlePath = project.absoluteProjectPath('bundleAll')
         project.gradle.taskGraph.whenReady { TaskExecutionGraph graph ->
             if (graph.hasTask(planPath) && graph.hasTask(releasePath)) {
                 throw new GradleException('Do not request releaseAllPlan and releaseAll in the same invocation; review the saved manifest, then run :releaseAll separately')
+            }
+            if (graph.hasTask(releasePath) && graph.hasTask(bundlePath)) {
+                ReleaseAllTask release = releaseAllTask.get()
+                if (!release.resumeId.getOrElse('') && release.useExistingBundle.getOrElse(false)) {
+                    throw new GradleException('Do not request bundleAll and releaseAll in the same invocation in existing-bundle mode; verify the saved ZIP, then run releaseAll separately')
+                }
             }
         }
         def providers = new CombinedReleaseTasks(planTask, signingCheckTask, guardTask, prepareMavenTask, bundleAllTask, releaseAllTask)

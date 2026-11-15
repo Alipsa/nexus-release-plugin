@@ -292,6 +292,48 @@ class CombinedReleaseTest {
         assertEquals(1, uploads)
     }
 
+    @Test void changedBundleAfterVerificationCannotUpload() {
+        File record = new File(directory, 'deployment.json')
+        File bundle = new File(directory, 'bundle.zip'); bundle.text = 'verified'
+        String verifiedHash = ReleaseChecksums.checksum(bundle, 'SHA-256')
+        def availability = new PublicationStatus() {
+            @Override boolean published(ReleaseCoordinate coordinate, boolean both) {
+                bundle.text = 'changed during availability probe'
+                false
+            }
+        }
+        def client = new CentralPortalClient(org.gradle.api.logging.Logging.getLogger(CombinedReleaseTest), null, 'u', 'p') {
+            @Override String upload(File file) { fail('Changed bytes must never upload'); '' }
+        }
+        Map manifest = [selected: [[groupId: 'g', artifactId: 'a', version: '1']]]
+        def failure = assertThrows(IllegalStateException) {
+            CombinedDeployment.submit(record, bundle, manifest, availability, client, verifiedHash)
+        }
+        assertTrue(failure.message.contains('Bundle changed after verification'))
+        assertFalse(record.exists())
+        assertFalse(directory.listFiles().any { it.name.startsWith('.verified-upload-') })
+    }
+
+    @Test void uploadUsesVerifiedSnapshotEvenIfOriginalIsReplaced() {
+        File record = new File(directory, 'deployment.json')
+        File bundle = new File(directory, 'bundle.zip'); bundle.text = 'verified'
+        String verifiedHash = ReleaseChecksums.checksum(bundle, 'SHA-256')
+        def client = new CentralPortalClient(org.gradle.api.logging.Logging.getLogger(CombinedReleaseTest), null, 'u', 'p') {
+            @Override String upload(File file) {
+                assertNotEquals(bundle.canonicalPath, file.canonicalPath)
+                assertEquals(bundle.name, file.name)
+                bundle.text = 'replaced before multipart reads'
+                assertEquals('verified', file.text)
+                assertEquals(verifiedHash, ReleaseChecksums.checksum(file, 'SHA-256'))
+                'saved-id'
+            }
+        }
+        Map state = CombinedDeployment.submit(record, bundle, [selected: []], new PublicationStatus(), client, verifiedHash)
+        assertEquals(verifiedHash, state.bundleHash)
+        assertEquals(verifiedHash, ReleaseManifest.read(record).bundleHash)
+        assertFalse(directory.listFiles().any { it.name.startsWith('.verified-upload-') })
+    }
+
     @Test void failedDeploymentReportsEveryCoordinate() {
         File record = new File(directory, 'deployment.json')
         ReleaseManifest.write(record, [deploymentId: 'id', manifest: [selected: [[groupId: 'g', artifactId: 'a', version: '1']]]])

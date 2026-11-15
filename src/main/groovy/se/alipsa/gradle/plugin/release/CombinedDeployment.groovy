@@ -3,14 +3,32 @@ package se.alipsa.gradle.plugin.release
 /** One-attempt upload journaling and status-only recovery. */
 class CombinedDeployment {
     /** Uploads once, persisting intent before HTTP and ID immediately after it. */
-    static Map submit(File record, File bundle, Map manifest, PublicationStatus availability, CentralPortalClient client) {
+    static Map submit(File record, File bundle, Map manifest, PublicationStatus availability, CentralPortalClient client, String verifiedBundleHash = '') {
         if (record.exists()) throw new IllegalStateException('Deployment record exists; resume or reconcile it before a new upload')
         manifest.selected.each { Map component ->
             if (availability.published(new ReleaseCoordinate(component.groupId, component.artifactId, component.version), true)) {
                 throw new IllegalStateException("Component was published since planning: ${component.artifactId}")
             }
         }
-        Map state = [state: 'SUBMITTING', bundleHash: ReleaseChecksums.checksum(bundle, 'SHA-256'),
+        // Upload a private snapshot: later writes to the original ZIP cannot change request bytes.
+        record.absoluteFile.parentFile.mkdirs()
+        File uploadDirectory = java.nio.file.Files.createTempDirectory(record.absoluteFile.parentFile.toPath(), '.verified-upload-').toFile()
+        File snapshot = new File(uploadDirectory, bundle.name)
+        try {
+            java.nio.file.Files.copy(bundle.toPath(), snapshot.toPath())
+            String uploadHash = ReleaseChecksums.checksum(snapshot, 'SHA-256')
+            if (verifiedBundleHash && uploadHash != verifiedBundleHash) {
+                throw new IllegalStateException('Bundle changed after verification; no upload attempted')
+            }
+            return uploadSnapshot(record, snapshot, manifest, client, uploadHash)
+        } finally {
+            snapshot.delete()
+            uploadDirectory.delete()
+        }
+    }
+
+    private static Map uploadSnapshot(File record, File bundle, Map manifest, CentralPortalClient client, String uploadHash) {
+        Map state = [state: 'SUBMITTING', bundleHash: uploadHash,
                      manifest: manifest, created: java.time.Instant.now().toString()]
         // Reserve the active journal atomically: two local invocations must not both submit.
         record.parentFile.mkdirs()

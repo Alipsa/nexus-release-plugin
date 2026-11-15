@@ -83,7 +83,7 @@ final class ModuleReleaseConfigurer {
         }
         extension.releaseAllTask.configure { task ->
             if (!task.resumeId.getOrElse('')) {
-                task.dependsOn(task.useExistingBundle.get() ? extension.guardTask : extension.bundleAllTask)
+                task.dependsOn(task.useExistingBundle.getOrElse(false) ? extension.guardTask : extension.bundleAllTask)
             }
         }
     }

@@ -292,8 +292,26 @@ The publishing-script harness runs as part of `check` when Bash is available. Lo
 
 ### Upload a verified combined bundle
 
-After planning and `bundleAll`, configure `releaseAll { useExistingBundle = true }` to
-submit the saved ZIP without rebuilding, signing or staging it again. Source/version and
-saved manifest/receipt hashes are rechecked before availability probes and upload. Consumers
-must bind additional integration evidence to this exact ZIP digest before invoking the task.
-Resume remains status-only and does not require current build outputs.
+Run planning and `bundleAll` separately from the upload invocation. After testing and
+reviewing the saved ZIP, configure the upload task with its SHA-256 from retained,
+reviewed evidence:
+
+```groovy
+releaseAll {
+    useExistingBundle = providers.gradleProperty('existing').isPresent()
+    expectedBundleSha256 = providers.gradleProperty('verifiedBundleSha256')
+}
+```
+
+Then run `releaseAll -Pexisting -PverifiedBundleSha256=<reviewed SHA-256>` to submit
+without rebuilding, signing or staging again. Existing-bundle mode requires this digest;
+do not derive it from the mutable receipt beside the ZIP at upload time. It must match
+both the receipt and the actual ZIP. The optional digest also applies to normal uploads
+when supplied. Source/version and saved manifest hashes are rechecked before upload.
+The uploader checks a private snapshot against the verified digest and sends that snapshot.
+
+Requesting `bundleAll` and `releaseAll` together in existing-bundle mode is rejected,
+including through task dependencies. `useExistingBundle` defaults to false, including
+when assigned a provider with no value. When `resumeId` is set, resume takes priority:
+both `useExistingBundle` and `expectedBundleSha256` are ignored. Resume remains
+status-only and does not require current build outputs.
