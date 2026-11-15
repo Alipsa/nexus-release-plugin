@@ -6,6 +6,7 @@
 [![Javadoc](https://javadoc.io/badge2/se.alipsa.nexus-release-plugin/se.alipsa.nexus-release-plugin.gradle.plugin/javadoc.svg)](https://javadoc.io/doc/se.alipsa.nexus-release-plugin/se.alipsa.nexus-release-plugin.gradle.plugin)
 
 Automates the release process to Sonatype Central.
+See the [release history](release.md) for changes and upgrade notes.
 
 Assumptions are:
 1. It assumes you use the maven publish plugin to define your artifacts
@@ -243,6 +244,9 @@ nexusReleasePlugin {
 Run `./gradlew releaseAllPlan` first and review the selection, then `./gradlew bundleAll`
 to check, sign, and bundle it, and `./gradlew releaseAll` to upload. The ZIP defaults to
 `build/releaseAll/<root project name>-mega-bundle.zip` (e.g. `build/releaseAll/jmlx-mega-bundle.zip`). Dependencies on omitted siblings must already be released.
+The default ZIP name changed in 2.6.0. Rerun `bundleAll` after upgrading; the old
+`build/releaseAll/bundle.zip` is no longer used and can be deleted. Override the path
+with `combinedRelease { bundleFile = ... }` when needed.
 No BOM, Maven settings helper, candidate JSON, or custom staging tasks are needed.
 Embedded or compile-only internal projects can be declared explicitly with
 `unpublishedProjectDependencies`; see the guide for its publication-metadata requirements.
@@ -263,18 +267,17 @@ proxy endpoints. Configure both explicitly when needed.
 
 ## Building the Plugin
 
-The build uses the Gradle 9.8.1 wrapper and compiles for Java 17.
+The build uses the Gradle 9.8.1 wrapper and requires an installed JDK 17 toolchain.
+Tests run on JDK 17 by default; compilation targets Java 17. The published plugin
+supports the verified Gradle 8.13/9.8.1 and JDK 17/21 runtime matrix. CI runs that
+compatibility matrix on Linux and the combined-release tests on Windows with JDK 17.
 
 ```bash
 ./gradlew build                  # Build and test
 ./gradlew publishToMavenLocal    # Publish to local Maven repo
 ```
 
-## License
-
-MIT License - see [LICENSE](LICENSE) for details.
-
-### Release deadlines and bundle contents
+## Release deadlines and bundle contents
 
 `httpConnectTimeoutSeconds` defaults to 30 and `httpRequestTimeoutSeconds` to 1800. Both accept 1–86400 seconds. Set them in `nexusReleasePlugin`; overrides apply to `release`. Uploads use the full request deadline. Deployment status checks and other small calls through `CentralPortalClient` use the shorter of 60 seconds and the configured deadline. The caller stops waiting even if an upload or response body stalls. Cancellation closed stalled connections in the verified runtime matrix; no stronger guarantee is made for arbitrary network implementations.
 
@@ -290,7 +293,7 @@ The selected publication's module metadata and adjacent signature are cleared be
 
 The publishing-script harness runs as part of `check` when Bash is available. Local builds without Bash skip it with a reason; CI requires it with `-PrequireShellHarness=true`.
 
-### Upload a verified combined bundle (2.6.0+)
+## Upload a verified combined bundle (2.6.0+)
 
 Run planning and `bundleAll` separately from the upload invocation. After testing and
 reviewing the saved ZIP, configure the upload task with the ZIP and manifest SHA-256 values
@@ -341,3 +344,31 @@ including through task dependencies. `useExistingBundle` defaults to false, incl
 when assigned a provider with no value. When `resumeId` is set, resume takes priority:
 `useExistingBundle`, `expectedBundleSha256` and `expectedManifestSha256` are ignored.
 Resume remains status-only and does not require current build outputs.
+
+## Releasing the Plugin
+
+Set `version` in `gradle.properties` to the release version without `-SNAPSHOT`,
+update every plugin-version example in this README and `combined-releases.md`,
+and date the matching entry in [release.md](release.md). The build applies published
+plugin version 2.3.0 to release itself; that bootstrap dependency is independent of
+this project's release version.
+
+With JDK 17 available, verify the release before publishing:
+
+```bash
+./gradlew clean build -PrequireShellHarness=true
+./gradlew publishPlugins --validate-only
+```
+
+Configure Central Portal credentials, Gradle signing properties and Plugin Portal
+credentials before publication. Commit the release preparation so the working tree
+is clean, then run `./publish.sh`. The script builds and tests, validates Plugin Portal
+publication, releases to Maven Central, then publishes to the Plugin Portal, stopping
+on the first failure. If Plugin Portal publication fails after Central has accepted
+the release, retry only `./gradlew publishPlugins` after resolving the Portal failure.
+The script requires a clean working tree; version and documentation consistency are
+maintainer checks performed before invoking it.
+
+## License
+
+MIT License - see [LICENSE](LICENSE) for details.

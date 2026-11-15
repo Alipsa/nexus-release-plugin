@@ -1,6 +1,6 @@
 # Release history
 
-## Ver 2.6.0 (in progress)
+## Ver 2.6.0, 2026-11-15
 - Add verified existing-bundle uploads: configure `releaseAll { useExistingBundle = true }`
   with required `expectedBundleSha256` and `expectedManifestSha256` values from retained,
   reviewed evidence. Upload without rebuilding, signing or staging. Before upload, validate
