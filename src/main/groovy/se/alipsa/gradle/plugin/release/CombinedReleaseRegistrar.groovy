@@ -87,8 +87,12 @@ final class CombinedReleaseRegistrar {
                 if (!release.resumeId.getOrElse('') && release.useExistingBundle.getOrElse(false)) {
                     // Bind upload evidence only for an upload graph, never plain checks/bundling.
                     // This input is retained when the configuration cache stores the resolved graph.
+                    // Keep the cached-graph regressions when upgrading Gradle: this relies on
+                    // task inputs remaining writable during graph configuration.
                     guardTask.get().expectedManifestSha256.set(release.expectedManifestSha256)
                 }
+            } else {
+                project.logger.info('Upload evidence ignored: releaseAll not scheduled')
             }
             if (graph.hasTask(releasePath) && graph.hasTask(bundlePath)) {
                 ReleaseAllTask release = releaseAllTask.get()

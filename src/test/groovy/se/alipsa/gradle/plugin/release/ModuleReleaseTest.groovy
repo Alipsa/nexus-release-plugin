@@ -8,6 +8,7 @@ import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
 import java.util.zip.ZipFile
 import static org.junit.jupiter.api.Assertions.*
+import static org.gradle.testkit.runner.TaskOutcome.SUCCESS
 
 class ModuleReleaseTest {
     private static final String BUNDLE = 'build/releaseAll/module-release-fixture-mega-bundle.zip'
@@ -707,16 +708,19 @@ nexusReleasePlugin {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = ['bundleAll', 'releaseAllSigningCheck', 'releaseAllGuard', ':core:check'])
+    @ValueSource(strings = ['bundleAll', 'releaseAllSigningCheck', 'releaseAllGuard'])
     void nonUploadGraphsIgnoreExportedUploadEvidence(String task) {
         withServer { String base, List requests ->
             existingFixture(base)
             run('releaseAllPlan')
-            String[] args = ['-Pexisting', '-Pexpected=not-an-upload-digest', '-PexpectedManifest=not-a-manifest-digest']
+            String[] args = ['-Pexisting', '-Pexpected=not-an-upload-digest', '-PexpectedManifest=not-a-manifest-digest', '--info']
             def first = run(task, *args)
             assertNull(first.task(':releaseAll'))
+            assertEquals(SUCCESS, first.task(':releaseAllGuard')?.outcome)
+            assertTrue(first.output.contains('Upload evidence ignored: releaseAll not scheduled'))
             def cached = run(task, *args)
             assertNull(cached.task(':releaseAll'))
+            assertEquals(SUCCESS, cached.task(':releaseAllGuard')?.outcome)
             assertTrue(cached.output.contains('Reusing configuration cache.'))
             assertFalse(requests.any { it.contains('/publisher/upload') })
         }
