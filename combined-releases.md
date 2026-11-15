@@ -354,10 +354,17 @@ before another upload. An initial connection failure usually means no upload was
 The client does not distinguish these cases, so it conservatively retains the record.
 Never automatically retry an unknown upload outcome. Resume only the saved ID, without
 source checks, builds or signing. Polling defaults to 60 attempts at 10-second intervals;
-Transient I/O errors are recorded and polling continues within that bound. Availability probes use HEAD.
+transient I/O errors are recorded and polling continues within that bound. Availability probes use HEAD.
 Central propagation remains separate from Portal publication. A failed record reports all
 component coordinates. Archive an `AVAILABLE` record before a new deployment; manually
 reconcile every unresolved record rather than deleting it to retry.
+
+On Windows, atomic journal replacement retries filesystem failures with 1.27 seconds
+of total backoff, independently of localized error text. A persistent failure
+propagates while preserving the previous journal. This retry applies to
+local journal replacement; upload requests remain single-attempt. Git paths and
+journal JSON are decoded as UTF-8, including when running on JDK 17 with a non-UTF-8
+default charset.
 
 Parent `httpConnectTimeoutSeconds` and `httpRequestTimeoutSeconds` are not inherited
 by combined tasks. CentralPortalClient retains 30 s connect, 1800 s upload and 60 s
