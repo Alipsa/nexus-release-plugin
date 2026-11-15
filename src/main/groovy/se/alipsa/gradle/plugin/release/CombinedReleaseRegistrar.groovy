@@ -77,7 +77,15 @@ final class CombinedReleaseRegistrar {
         String planPath = project.absoluteProjectPath('releaseAllPlan')
         String releasePath = project.absoluteProjectPath('releaseAll')
         String bundlePath = project.absoluteProjectPath('bundleAll')
+        String guardPath = project.absoluteProjectPath('releaseAllGuard')
         project.gradle.taskGraph.whenReady { TaskExecutionGraph graph ->
+            if (!graph.hasTask(releasePath) && graph.hasTask(guardPath)) {
+                // Only release-preparation graphs realize releaseAll for this diagnostic.
+                ReleaseAllTask release = releaseAllTask.get()
+                if (release.expectedBundleSha256.getOrElse('') || release.expectedManifestSha256.getOrElse('')) {
+                    project.logger.info('Upload evidence ignored: releaseAll is not scheduled, so expectedBundleSha256 and expectedManifestSha256 are not checked')
+                }
+            }
             if (graph.hasTask(planPath) && graph.hasTask(releasePath)) {
                 throw new GradleException('Do not request releaseAllPlan and releaseAll in the same invocation; review the saved manifest, then run :releaseAll separately')
             }

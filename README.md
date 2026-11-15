@@ -325,8 +325,9 @@ in existing-bundle mode: normal uploads rebuild and re-sign artifacts, so an ear
 digest generally cannot match. Digest properties also come from project/user
 `gradle.properties` and `ORG_GRADLE_PROJECT_*` environment variables; remove or clear them
 before a normal release. Upload evidence is ignored when `releaseAll` is absent from the
-task graph, including plain checks, signing checks and bundle-only runs. Source/version
-and saved manifest hashes are rechecked.
+task graph, including plain checks, signing checks and bundle-only runs; when such a run
+schedules `releaseAllGuard`, an info-level message (`--info`) says the evidence was not
+checked. Source/version and saved manifest hashes are rechecked.
 
 The uploader hashes and parses the same manifest bytes, and sends a private ZIP snapshot
 checked against the verified digest. The bundle directory must be writable for snapshot
