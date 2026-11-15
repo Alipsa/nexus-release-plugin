@@ -338,6 +338,31 @@ class CombinedReleaseTest {
         assertFalse(directory.listFiles().any { it.name.startsWith('.verified-upload-') })
     }
 
+    @Test void snapshotCreationFailureExplainsWritableDirectoryRequirement() {
+        File record = new File(directory, 'deployment.json')
+        File blockedDirectory = new File(directory, 'not-a-directory'); blockedDirectory.text = 'blocked'
+        File bundle = new File(blockedDirectory, 'bundle.zip')
+        def client = new CentralPortalClient(org.gradle.api.logging.Logging.getLogger(CombinedReleaseTest), null, 'u', 'p') {
+            @Override String upload(File file) { fail('Snapshot creation failure must never upload'); '' }
+        }
+        def failure = assertThrows(IllegalStateException) {
+            CombinedDeployment.submit(record, bundle, [selected: []], new PublicationStatus(), client)
+        }
+        assertTrue(failure.message.contains('place the reviewed ZIP in a writable directory'))
+        assertTrue(failure.message.contains('bundleFile'))
+        assertInstanceOf(IOException, failure.cause)
+        assertFalse(record.exists())
+    }
+
+    @Test void byteAndFileChecksumsUseTheSameHexFormat() {
+        File file = new File(directory, 'evidence')
+        file.bytes = [0, 127, -128, -1] as byte[]
+        ['SHA-256', 'SHA-1', 'MD5'].each { String algorithm ->
+            assertEquals(ReleaseChecksums.checksum(file, algorithm), ReleaseChecksums.checksum(file.bytes, algorithm))
+            assertTrue(ReleaseChecksums.checksum(file.bytes, algorithm) ==~ /[0-9a-f]+/)
+        }
+    }
+
     @Test void failedDeploymentReportsEveryCoordinate() {
         File record = new File(directory, 'deployment.json')
         ReleaseManifest.write(record, [deploymentId: 'id', manifest: [selected: [[groupId: 'g', artifactId: 'a', version: '1']]]])

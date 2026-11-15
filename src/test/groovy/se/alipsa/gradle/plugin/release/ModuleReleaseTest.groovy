@@ -576,7 +576,7 @@ nexusReleasePlugin {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = ['dirty', 'commit', 'manifest', 'replan', 'missing-receipt', 'missing-zip', 'rewritten-receipt', 'rewritten-manifest-receipt'])
+    @ValueSource(strings = ['dirty', 'commit', 'manifest', 'replan', 'missing-receipt', 'missing-zip', 'rewritten-receipt', 'rewritten-manifest-receipt', 'guard-manifest'])
     void existingBundleRejectsDriftAndMissingFiles(String change) {
         withServer { String base, List requests ->
             existingFixture(base)
@@ -596,6 +596,13 @@ nexusReleasePlugin {
                     run('releaseAllPlan'); break
                 case 'missing-receipt': assertTrue(new File(root, 'build/releaseAll/bundle-receipt.json').delete()); break
                 case 'missing-zip': assertTrue(new File(root, BUNDLE).delete()); break
+                case 'guard-manifest':
+                    File guardManifestFile = new File(root, 'build/releaseAll/manifest.json')
+                    Map guardManifest = ReleaseManifest.read(guardManifestFile)
+                    guardManifest.modulePaths = [':replaced']
+                    guardManifest.revision = 'replaced'
+                    ReleaseManifest.write(guardManifestFile, guardManifest)
+                    break
                 case 'rewritten-manifest-receipt':
                     // Bypass the mutable source/selection guard and update its mutable receipt.
                     new File(root, 'core/src/main/java/Core.java') << '\n// changed'
@@ -633,7 +640,8 @@ nexusReleasePlugin {
             run('releaseAllPlan')
             def missingDigest = runner('releaseAll', '-Pexisting').buildAndFail()
             assertTrue(missingDigest.output.contains('requires expectedBundleSha256'))
-            def missingBundle = runner('releaseAll', '-Pexisting', '-Pexpected=' + ('0' * 64), '-PexpectedManifest=' + ('0' * 64)).buildAndFail()
+            def missingBundle = runner('releaseAll', '-Pexisting', '-Pexpected=' + ('0' * 64),
+                '-PexpectedManifest=' + ReleaseChecksums.checksum(new File(root, 'build/releaseAll/manifest.json'), 'SHA-256')).buildAndFail()
             assertTrue(missingBundle.output.contains('Prepared release file missing'))
             assertFalse(requests.any { it.contains('/publisher/upload') })
         }

@@ -67,7 +67,7 @@ abstract class ReleaseAllTask extends DefaultTask {
             }
             // Hash and parse the same bytes, so the probed graph is the reviewed manifest.
             byte[] manifestBytes = manifestFile.get().asFile.bytes
-            String manifestHash = java.security.MessageDigest.getInstance('SHA-256').digest(manifestBytes).encodeHex().toString()
+            String manifestHash = ReleaseChecksums.checksum(manifestBytes, 'SHA-256')
             Map receipt = ReleaseManifest.read(receiptFile.get().asFile)
             if (expectedManifest && (receipt.manifestHash != expectedManifest || manifestHash != expectedManifest)) {
                 throw new IllegalStateException('Manifest or receipt differs from expectedManifestSha256; no upload attempted')

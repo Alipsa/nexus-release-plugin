@@ -14,10 +14,13 @@ abstract class ReleaseSourceGuardTask extends DefaultTask {
     @InputFile @PathSensitive(PathSensitivity.NONE) abstract RegularFileProperty getManifestFile()
     @Internal abstract DirectoryProperty getSourceDirectory()
     @Input abstract Property<String> getVersionsJson()
+    /** Optional reviewed manifest anchor, checked before source and selection diagnostics. */
+    @Input @Optional abstract Property<String> getExpectedManifestSha256()
     @Input abstract org.gradle.api.provider.ListProperty<String> getModulePaths()
     @Input abstract org.gradle.api.provider.ListProperty<String> getUnpublishedProjectPaths()
 
     ReleaseSourceGuardTask() {
+        expectedManifestSha256.convention('')
         modulePaths.convention([])
         unpublishedProjectPaths.convention([])
         outputs.upToDateWhen { false }
@@ -26,7 +29,12 @@ abstract class ReleaseSourceGuardTask extends DefaultTask {
     /** Rejects stale manifests before any preparation task can run. */
     @TaskAction
     void guard() {
-        Map manifest = ReleaseManifest.read(manifestFile.get().asFile)
+        byte[] manifestBytes = manifestFile.get().asFile.bytes
+        String expected = expectedManifestSha256.getOrElse('').toLowerCase(Locale.ROOT)
+        if (expected && ReleaseChecksums.checksum(manifestBytes, 'SHA-256') != expected) {
+            throw new IllegalStateException('Manifest differs from expectedManifestSha256; no upload attempted')
+        }
+        Map manifest = new JsonSlurper().parse(manifestBytes) as Map
         if (!modulePaths.get().empty && manifest.modulePaths != modulePaths.get()) {
             throw new IllegalStateException('Configured modules changed; run releaseAllPlan again before bundling')
         }

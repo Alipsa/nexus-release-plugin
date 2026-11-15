@@ -13,7 +13,12 @@ class CombinedDeployment {
             }
         }
         // Upload a private snapshot: later writes to the original ZIP cannot change request bytes.
-        File uploadDirectory = java.nio.file.Files.createTempDirectory(bundle.absoluteFile.parentFile.toPath(), '.verified-upload-').toFile()
+        File uploadDirectory
+        try {
+            uploadDirectory = java.nio.file.Files.createTempDirectory(bundle.absoluteFile.parentFile.toPath(), '.verified-upload-').toFile()
+        } catch (IOException failure) {
+            throw new IllegalStateException("Cannot create a verified upload snapshot beside ${bundle.absolutePath}; place the reviewed ZIP in a writable directory and point bundleFile there. No upload attempted", failure)
+        }
         File snapshot = new File(uploadDirectory, bundle.name)
         try {
             java.nio.file.Files.copy(bundle.toPath(), snapshot.toPath())
