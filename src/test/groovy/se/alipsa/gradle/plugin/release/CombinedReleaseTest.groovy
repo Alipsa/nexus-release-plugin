@@ -571,6 +571,29 @@ class CombinedReleaseTest {
 
     @Test
     @EnabledOnOs(OS.WINDOWS)
+    void journalReplacementRetriesWhenItsTemporaryFileIsInUse() {
+        File source = new File(directory, 'journal.tmp')
+        File target = new File(directory, 'journal.json')
+        ReleaseManifest.write(source, [state: 'AVAILABLE'])
+        ReleaseManifest.write(target, [state: 'UPLOADED'])
+        // A scanner can open the temporary file between writing and renaming it.
+        // Invoke the replacement directly to hold that source handle deterministically.
+        def replace = ReleaseManifest.getDeclaredMethod('replaceAtomically', java.nio.file.Path, java.nio.file.Path)
+        replace.accessible = true
+        def executor = java.util.concurrent.Executors.newSingleThreadScheduledExecutor()
+        new FileInputStream(source).withCloseable { reader ->
+            def release = executor.schedule({ -> reader.close() } as Runnable, 100, java.util.concurrent.TimeUnit.MILLISECONDS)
+            try {
+                replace.invoke(null, source.toPath(), target.toPath())
+                release.get(5, java.util.concurrent.TimeUnit.SECONDS)
+                assertEquals('AVAILABLE', ReleaseManifest.read(target).state)
+                assertFalse(source.exists())
+            } finally { executor.shutdownNow() }
+        }
+    }
+
+    @Test
+    @EnabledOnOs(OS.WINDOWS)
     void permanentlyLockedJournalFailsWithoutChangingOriginalAndCleansUp() {
         File record = new File(directory, 'journal.json')
         ReleaseManifest.write(record, [state: 'UPLOADED'])

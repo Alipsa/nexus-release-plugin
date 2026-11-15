@@ -10,11 +10,11 @@ class ReleaseManifest {
 
     static String gitOutput(File root, String... arguments) {
         Process process = new ProcessBuilder(['git', '-C', root.absolutePath] + arguments.toList()).start()
-        StringBuffer output = new StringBuffer()
-        StringBuffer errors = new StringBuffer()
+        ByteArrayOutputStream output = new ByteArrayOutputStream()
+        ByteArrayOutputStream errors = new ByteArrayOutputStream()
         process.waitForProcessOutput(output, errors)
-        if (process.exitValue() != 0) throw new IllegalStateException('Git source validation failed: ' + errors.toString().trim())
-        output.toString()
+        if (process.exitValue() != 0) throw new IllegalStateException('Git source validation failed: ' + errors.toString('UTF-8').trim())
+        output.toString('UTF-8')
     }
 
     /** Rejects index flags that can hide working-tree changes, preserving arbitrary filenames. */
@@ -70,11 +70,13 @@ class ReleaseManifest {
                 java.nio.file.Files.move(source, target, java.nio.file.StandardCopyOption.ATOMIC_MOVE,
                     java.nio.file.StandardCopyOption.REPLACE_EXISTING)
                 return
-            } catch (java.nio.file.AccessDeniedException failure) {
+            } catch (java.nio.file.FileSystemException failure) {
                 // Windows can briefly deny replacement during another rename or an
                 // external read without delete sharing. Keep the old journal intact
                 // and retry only the atomic move, for at most 1.27 seconds in total.
-                if (attempt >= 7 || !System.getProperty('os.name').toLowerCase(Locale.ROOT).contains('windows')) throw failure
+                boolean sharingViolation = failure.reason?.toLowerCase(Locale.ROOT)?.contains('being used by another process')
+                if (attempt >= 7 || !System.getProperty('os.name').toLowerCase(Locale.ROOT).contains('windows') ||
+                    !(failure instanceof java.nio.file.AccessDeniedException || sharingViolation)) throw failure
                 try {
                     Thread.sleep(10L << attempt)
                 } catch (InterruptedException interrupted) {

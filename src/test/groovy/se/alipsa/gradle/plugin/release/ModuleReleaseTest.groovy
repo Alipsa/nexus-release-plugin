@@ -329,6 +329,9 @@ tasks.named('generatePomFileForMavenPublication') {
                 assertTrue(pom.delete())
                 def result = run(':bundleAll', ':releaseAllPrepareMaven', ':core:generatePomFileForMavenPublication')
                 List<String> tasks = result.tasks*.path
+                [':core:generatePomFileForMavenPublication', ':releaseAllPrepareMaven', ':bundleAll'].each { path ->
+                    assertTrue(tasks.contains(path), 'Expected task in results: ' + path)
+                }
                 assertTrue(tasks.indexOf(':core:generatePomFileForMavenPublication') < tasks.indexOf(':releaseAllPrepareMaven'))
                 assertTrue(tasks.indexOf(':releaseAllPrepareMaven') < tasks.indexOf(':bundleAll'))
                 assertTrue(new File(root, BUNDLE).isFile())

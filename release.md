@@ -1,12 +1,13 @@
 # Release history
 
 ## Ver 2.6.0 (in progress)
-- Add verified existing-bundle uploads (2.6.0+): configure `releaseAll { useExistingBundle = true }`
+- Add verified existing-bundle uploads: configure `releaseAll { useExistingBundle = true }`
   with required `expectedBundleSha256` and `expectedManifestSha256` values from retained,
   reviewed evidence. Upload without rebuilding, signing or staging. Before upload, validate
   digest presence/syntax, source revision and cleanliness, saved POM hashes, manifest and
   bundle hashes against the receipt and reviewed digests, and publication availability.
-  Hash and parse the same manifest bytes, and upload a private ZIP snapshot verified against the reviewed digest.
+  Hash and parse the same manifest bytes, and upload a private ZIP snapshot verified
+  against the reviewed digest.
   Snapshot creation requires a writable bundle directory; cleanup failures warn with the
   path to remove manually after upload stops. See [verified-bundle uploads](README.md#upload-a-verified-combined-bundle-260).
 - Behaviour change: normal `releaseAll` uploads fail if either expected digest is set,
@@ -15,14 +16,17 @@
   `releaseAll` together in existing-bundle mode is rejected, including via dependencies.
   Status-only `resumeId` recovery ignores existing-bundle settings and digests.
 - Report missing prepared files with a `Prepared release file missing` error.
+- Decode Git output as UTF-8 so non-ASCII source paths and guard diagnostics remain
+  readable with non-UTF-8 JVM defaults, including Windows on JDK 17.
 - Fix Windows journal locking during concurrent reads and atomic updates by reading
   JSON through NIO with delete sharing and briefly retrying atomic replacement when
-  Windows denies access. Persistent locks still fail without changing the old journal.
-- Fix #18: order `releaseAllGuard` after planned POM generation in module mode to avoid
+  Windows denies access or reports a sharing violation. Persistent locks still fail
+  without changing the old journal.
+- Fix (PR #18): order `releaseAllGuard` after planned POM generation in module mode to avoid
   intermittent `Stale manifest input: …/pom-default.xml` failures in user builds and CI.
   Also order `releaseAllPrepareMaven` after planned POM generation and `bundleAll` after
   Maven preparation when scheduled together. Document caller-managed ordering in advanced mode.
-- Diagnostic #17: log `Upload evidence ignored` at info level (`--info`) when
+- Diagnostic (PR #17): log `Upload evidence ignored` at info level (`--info`) when
   `releaseAllGuard` runs without `releaseAll` in the task graph; bundle-only and check-only
   runs do not validate upload evidence.
 - Change the default combined-release bundle name from `bundle.zip` to
